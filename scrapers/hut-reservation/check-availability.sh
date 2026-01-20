@@ -2,6 +2,10 @@
 
 set -e
 
+# Change to script directory to ensure relative paths work correctly
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 # Configuration
 API_URL="https://www.hut-reservation.org/api/v1/reservation/getHutAvailability"
 HUT_IDS=(366 476)
