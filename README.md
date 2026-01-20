@@ -8,9 +8,14 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 .
 ├── .github/
 │   └── workflows/           # GitHub Actions Workflows
-│       └── check-hut-availability.yml
+│       ├── check-hut-availability.yml
+│       └── check-huettenholiday-availability.yml
 ├── scrapers/
-│   └── hut-reservation/     # Hüttenbuchungen (hut-reservation.org)
+│   ├── hut-reservation/     # Hüttenbuchungen (hut-reservation.org)
+│   │   ├── check-availability.sh
+│   │   ├── availability-results/
+│   │   └── README.md
+│   └── huettenholiday/      # Hüttenbuchungen (huetten-holiday.com)
 │       ├── check-availability.sh
 │       ├── availability-results/
 │       └── README.md
@@ -28,6 +33,16 @@ Prüft Hüttenverfügbarkeit auf hut-reservation.org.
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-hut-availability.yml`
 - **Dokumentation:** [scrapers/hut-reservation/README.md](scrapers/hut-reservation/README.md)
+
+### 2. Hüttenholiday (`scrapers/huettenholiday/`)
+
+Prüft Hüttenverfügbarkeit auf huetten-holiday.com.
+
+- **Plattform:** [huetten-holiday.com](https://www.huetten-holiday.com)
+- **Hütten:** Hütte 27, Hütte 24
+- **Intervall:** Alle 3 Stunden
+- **Workflow:** `.github/workflows/check-huettenholiday-availability.yml`
+- **Dokumentation:** [scrapers/huettenholiday/README.md](scrapers/huettenholiday/README.md)
 
 ## Neuen Scraper hinzufügen
 

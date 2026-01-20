@@ -1,0 +1,41 @@
+name: Check Hüttenholiday Availability
+
+on:
+  # Run every 3 hours
+  schedule:
+    - cron: '0 */3 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  check-availability:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Hüttenholiday availability
+        run: bash scrapers/huettenholiday/check-availability.sh
+        working-directory: ${{ github.workspace }}
+
+      - name: Upload availability results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: huettenholiday-availability-results-${{ github.run_number }}
+          path: scrapers/huettenholiday/availability-results/*.json
+          retention-days: 90
+
+      - name: Display summary
+        if: always()
+        run: |
+          echo "✅ Hüttenholiday availability check completed"
+          echo "📁 Results have been saved as artifacts"
+
+          if [ -f scrapers/huettenholiday/availability-results/*.json ]; then
+            echo ""
+            echo "Generated files:"
+            ls -lh scrapers/huettenholiday/availability-results/
+          fi
