@@ -1,0 +1,42 @@
+name: Check Hut Availability
+
+on:
+  # Run every 3 hours
+  schedule:
+    - cron: '0 */3 * * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  check-availability:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check hut availability
+        run: |
+          cd scripts
+          bash check-availability.sh
+
+      - name: Upload availability results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hut-availability-results-${{ github.run_number }}
+          path: scripts/availability-results/*.json
+          retention-days: 90
+
+      - name: Display summary
+        if: always()
+        run: |
+          echo "✅ Hut availability check completed"
+          echo "📁 Results have been saved as artifacts"
+
+          if [ -f scripts/availability-results/*.json ]; then
+            echo ""
+            echo "Generated files:"
+            ls -lh scripts/availability-results/
+          fi
