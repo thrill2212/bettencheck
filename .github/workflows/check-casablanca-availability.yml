@@ -1,0 +1,61 @@
+name: Check Casablanca Availability
+
+on:
+  # Run every 6 hours to stay within free tier
+  schedule:
+    - cron: '0 */6 * * *'
+
+  # Allow manual trigger with options
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: 'Run in test mode (only 7 days)'
+        required: false
+        type: boolean
+        default: false
+      resort_id:
+        description: 'Resort ID (optional override)'
+        required: false
+        type: string
+        default: 'A_6511_SKIHU'
+      company:
+        description: 'Company (optional override)'
+        required: false
+        type: string
+        default: 'c_COMP1'
+
+jobs:
+  check-availability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Casablanca availability
+        run: bash scrapers/casablanca/check-availability.sh
+        working-directory: ${{ github.workspace }}
+        env:
+          TEST_MODE: ${{ inputs.test_mode || 'false' }}
+          RESORT_ID: ${{ inputs.resort_id || 'A_6511_SKIHU' }}
+          COMPANY: ${{ inputs.company || 'c_COMP1' }}
+
+      - name: Upload availability results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: casablanca-availability-results-${{ github.run_number }}
+          path: scrapers/casablanca/availability-results/*.json
+          retention-days: 90
+
+      - name: Display summary
+        if: always()
+        run: |
+          echo "✅ Casablanca availability check completed"
+          echo "📁 Results have been saved as artifacts"
+          echo ""
+          if [ -f scrapers/casablanca/availability-results/*.json ]; then
+            echo "Generated files:"
+            ls -lh scrapers/casablanca/availability-results/ || true
+          fi
