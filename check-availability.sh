@@ -71,7 +71,9 @@ for i in "${!HUT_IDS[@]}"; do
     fi
 
     # Parse response and filter by season
-    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    # Use filesystem-safe timestamp format (no colons for GitHub artifacts)
+    timestamp=$(date -u +"%Y-%m-%dT%H%M%SZ")
+    timestamp_display=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     output_file="${OUTPUT_DIR}/availability-${hut_name}-${hut_id}-${timestamp}.json"
 
     # Filter days within season and categorize
@@ -80,7 +82,7 @@ for i in "${!HUT_IDS[@]}"; do
         {
             hutId: ($hutid | tonumber),
             hutName: $hutname,
-            checkedAt: "'$timestamp'",
+            checkedAt: "'$timestamp_display'",
             season: {
                 start: $start,
                 end: $end
