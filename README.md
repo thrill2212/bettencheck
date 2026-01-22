@@ -9,13 +9,18 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 ├── .github/
 │   └── workflows/           # GitHub Actions Workflows
 │       ├── check-hut-availability.yml
-│       └── check-huettenholiday-availability.yml
+│       ├── check-huettenholiday-availability.yml
+│       └── check-casablanca-availability.yml
 ├── scrapers/
 │   ├── hut-reservation/     # Hüttenbuchungen (hut-reservation.org)
 │   │   ├── check-availability.sh
 │   │   ├── availability-results/
 │   │   └── README.md
-│   └── huettenholiday/      # Hüttenbuchungen (huetten-holiday.com)
+│   ├── huettenholiday/      # Hüttenbuchungen (huetten-holiday.com)
+│   │   ├── check-availability.sh
+│   │   ├── availability-results/
+│   │   └── README.md
+│   └── casablanca/          # Berghütten (Casablanca System)
 │       ├── check-availability.sh
 │       ├── availability-results/
 │       └── README.md
@@ -43,6 +48,17 @@ Prüft Hüttenverfügbarkeit auf huetten-holiday.com.
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-huettenholiday-availability.yml`
 - **Dokumentation:** [scrapers/huettenholiday/README.md](scrapers/huettenholiday/README.md)
+
+### 3. Casablanca (`scrapers/casablanca/`)
+
+Prüft Bettenverfügbarkeit auf Casablanca Buchungssystem.
+
+- **Plattform:** [Casablanca Booking System](https://frontend.casablanca.at/)
+- **Resort:** A_6511_SKIHU (konfigurierbar)
+- **Intervall:** Alle 6 Stunden
+- **Workflow:** `.github/workflows/check-casablanca-availability.yml`
+- **Features:** Binary Search Algorithmus, saisonale Suche (Juni-Oktober)
+- **Dokumentation:** [scrapers/casablanca/README.md](scrapers/casablanca/README.md)
 
 ## Neuen Scraper hinzufügen
 
