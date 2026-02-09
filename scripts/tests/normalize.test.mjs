@@ -26,6 +26,34 @@ test("normalizeHutReservationPayload maps closed/open days to inferred availabil
   assert.equal(rows[1].status, "closed");
 });
 
+test("normalizeHutReservationPayload uses exact freeBeds when available", () => {
+  const payload = {
+    hutId: 366,
+    checkedAt: "2026-02-09T20:00:00Z",
+    allDays: [
+      {
+        date: "2026-06-10T00:00:00.000Z",
+        hutStatus: "SERVICED",
+        freeBeds: 23,
+      },
+      {
+        date: "2026-06-11T00:00:00.000Z",
+        hutStatus: "SERVICED",
+        freeBeds: 0,
+      },
+    ],
+  };
+
+  const rows = normalizeHutReservationPayload(payload, { "366": "braunschweiger-huette" });
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].available_beds, 23);
+  assert.equal(rows[0].status, "available");
+  assert.equal(rows[0].confidence, "exact");
+  assert.equal(rows[1].available_beds, 0);
+  assert.equal(rows[1].status, "unavailable");
+  assert.equal(rows[1].confidence, "exact");
+});
+
 test("normalizeHuettenholidayPayload keeps exact bed counts", () => {
   const payload = {
     scrapedAt: "2026-02-09T20:00:00Z",

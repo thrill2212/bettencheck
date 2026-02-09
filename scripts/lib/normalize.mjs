@@ -46,12 +46,23 @@ export function normalizeHutReservationPayload(payload, mapping) {
       const date = toIsoDate(day.date);
       if (!date) return null;
       const closed = day.hutStatus === "CLOSED";
+      const freeBeds =
+        typeof day.freeBeds === "number" && Number.isFinite(day.freeBeds)
+          ? Math.max(0, day.freeBeds)
+          : null;
+      const status = closed
+        ? "closed"
+        : freeBeds !== null
+          ? freeBeds > 0
+            ? "available"
+            : "unavailable"
+          : "available";
       return {
         hut_id: hutId,
         date,
-        available_beds: null,
-        status: closed ? "closed" : "available",
-        confidence: "inferred",
+        available_beds: freeBeds,
+        status,
+        confidence: freeBeds !== null ? "exact" : "inferred",
         source: "hut-reservation",
         checked_at: checkedAt,
       };
