@@ -210,8 +210,7 @@ generate_date_range() {
     local start_date="${season_year}-06-01"
     local end_date="${season_year}-10-01"
 
-    echo "$start_date"
-    echo "$end_date"
+    echo "$start_date $end_date"
 }
 
 generate_test_dates() {
