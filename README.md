@@ -152,6 +152,26 @@ Alle Scraper laufen automatisch als GitHub Actions:
 - **Summary:** Schnellübersicht in jedem Run
 - **Manual Trigger:** "Run workflow" Button für sofortige Ausführung
 
+### Supabase Upsert (neu)
+
+Nach jedem Scraper-Run normalisiert ein Node-Script die Rohdaten und schreibt sie nach Supabase:
+
+- Script: `scripts/normalize-and-upsert.mjs`
+- Mapping: `scripts/lib/provider-mapping.json`
+- Zieltabellen: `availability_daily`, `scrape_runs`
+
+Erforderliche Repository-Secrets:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Lokaler Test:
+
+```bash
+node scripts/normalize-and-upsert.mjs --source hut-reservation
+node --test scripts/tests/normalize.test.mjs
+```
+
 ## Artifacts
 
 Ergebnisse werden als Artifacts gespeichert:
