@@ -17,8 +17,21 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check Hüttenholiday availability
+        id: scrape_huettenholiday
         run: bash scrapers/huettenholiday/check-availability.sh
         working-directory: ${{ github.workspace }}
+
+      - name: Normalize and upsert to Supabase
+        if: always()
+        run: |
+          node scripts/normalize-and-upsert.mjs \
+            --source huettenholiday \
+            --input-dir scrapers/huettenholiday/availability-results \
+            --run-id "${{ github.run_id }}" \
+            --scraper-outcome "${{ steps.scrape_huettenholiday.outcome }}"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Upload availability results
         uses: actions/upload-artifact@v4

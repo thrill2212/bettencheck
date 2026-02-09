@@ -34,12 +34,26 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check Casablanca availability
+        id: scrape_casablanca
         run: bash scrapers/casablanca/check-availability.sh
         working-directory: ${{ github.workspace }}
         env:
           TEST_MODE: ${{ inputs.test_mode || 'false' }}
           RESORT_ID: ${{ inputs.resort_id || 'A_6511_SKIHU' }}
           COMPANY: ${{ inputs.company || 'c_COMP1' }}
+
+      - name: Normalize and upsert to Supabase
+        if: always()
+        run: |
+          node scripts/normalize-and-upsert.mjs \
+            --source casablanca \
+            --input-dir scrapers/casablanca/availability-results \
+            --run-id "${{ github.run_id }}" \
+            --resort-id "${{ inputs.resort_id || 'A_6511_SKIHU' }}" \
+            --scraper-outcome "${{ steps.scrape_casablanca.outcome }}"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Upload availability results
         uses: actions/upload-artifact@v4
