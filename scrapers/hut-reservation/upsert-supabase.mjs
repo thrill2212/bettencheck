@@ -217,18 +217,19 @@ const existingByRef = new Map();
 if (allRefs.size > 0) {
   const refsCsv = [...allRefs].map((r) => `"${r}"`).join(",");
   const existingRows = await selectRows("huts", {
-    select: "id,provider,provider_ref",
+    select:
+      "id,provider,provider_ref,name,booking_url,operator,elevation_m,website_url,booking_platform,phone,email,warden_name,sleeping_places_total,price_from_eur,latitude,longitude,source_url",
     provider: "eq.hut-reservation",
     provider_ref: `in.(${refsCsv})`,
     limit: "5000",
   });
   for (const row of existingRows) {
-    if (row?.provider_ref) existingByRef.set(String(row.provider_ref), row.id);
+    if (row?.provider_ref) existingByRef.set(String(row.provider_ref), row);
   }
 }
 
 function hutIdForRef(ref) {
-  return existingByRef.get(String(ref)) ?? `ohrs-${ref}`;
+  return existingByRef.get(String(ref))?.id ?? `ohrs-${ref}`;
 }
 
 const { seasonStart, seasonEnd } = getSeasonWindow();
@@ -249,6 +250,7 @@ for (const t of tours) {
     if (!ref) continue;
     const doc = latestByHutRef.get(ref);
     const hutId = hutIdForRef(ref);
+    const existing = existingByRef.get(ref) ?? null;
     const name = h.name ?? doc?.hutName ?? `Hut ${ref}`;
     const bookingUrl =
       doc?.bookingUrl ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`;
@@ -257,26 +259,27 @@ for (const t of tours) {
       id: hutId,
       provider: "hut-reservation",
       provider_ref: ref,
-      name,
-      booking_url: bookingUrl,
-      operator: doc?.hutInfo?.providerName ?? doc?.hutInfo?.tenantCode ?? "unknown",
-      elevation_m: altitude ?? 1,
-      website_url: doc?.hutInfo?.hutWebsite ?? null,
-      booking_platform: "hut-reservation.org",
-      phone: doc?.hutInfo?.phone ?? null,
-      email: null,
-      warden_name: doc?.hutInfo?.hutWarden ?? null,
-      sleeping_places_total: null,
-      price_from_eur: null,
-      latitude: doc?.location?.latitude ?? null,
-      longitude: doc?.location?.longitude ?? null,
-      source_url: bookingUrl,
+      name: name ?? existing?.name ?? `Hut ${ref}`,
+      booking_url: bookingUrl ?? existing?.booking_url ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`,
+      operator: doc?.hutInfo?.providerName ?? doc?.hutInfo?.tenantCode ?? existing?.operator ?? "unknown",
+      elevation_m: altitude ?? existing?.elevation_m ?? 1,
+      website_url: doc?.hutInfo?.hutWebsite ?? existing?.website_url ?? null,
+      booking_platform: existing?.booking_platform ?? "hut-reservation.org",
+      phone: doc?.hutInfo?.phone ?? existing?.phone ?? null,
+      email: existing?.email ?? null,
+      warden_name: doc?.hutInfo?.hutWarden ?? existing?.warden_name ?? null,
+      sleeping_places_total: existing?.sleeping_places_total ?? null,
+      price_from_eur: existing?.price_from_eur ?? null,
+      latitude: doc?.location?.latitude ?? existing?.latitude ?? null,
+      longitude: doc?.location?.longitude ?? existing?.longitude ?? null,
+      source_url: bookingUrl ?? existing?.source_url ?? null,
     });
   }
 }
 for (const [ref, doc] of latestByHutRef.entries()) {
   const hutId = hutIdForRef(ref);
   if (hutsMap.has(hutId)) continue;
+  const existing = existingByRef.get(ref) ?? null;
   const bookingUrl =
     doc?.bookingUrl ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`;
   const altitude = parseElevation(doc?.hutInfo?.altitude);
@@ -284,20 +287,20 @@ for (const [ref, doc] of latestByHutRef.entries()) {
     id: hutId,
     provider: "hut-reservation",
     provider_ref: ref,
-    name: doc?.hutName ?? `Hut ${ref}`,
-    booking_url: bookingUrl,
-    operator: doc?.hutInfo?.providerName ?? doc?.hutInfo?.tenantCode ?? "unknown",
-    elevation_m: altitude ?? 1,
-    website_url: doc?.hutInfo?.hutWebsite ?? null,
-    booking_platform: "hut-reservation.org",
-    phone: doc?.hutInfo?.phone ?? null,
-    email: null,
-    warden_name: doc?.hutInfo?.hutWarden ?? null,
-    sleeping_places_total: null,
-    price_from_eur: null,
-    latitude: doc?.location?.latitude ?? null,
-    longitude: doc?.location?.longitude ?? null,
-    source_url: bookingUrl,
+    name: doc?.hutName ?? existing?.name ?? `Hut ${ref}`,
+    booking_url: bookingUrl ?? existing?.booking_url ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`,
+    operator: doc?.hutInfo?.providerName ?? doc?.hutInfo?.tenantCode ?? existing?.operator ?? "unknown",
+    elevation_m: altitude ?? existing?.elevation_m ?? 1,
+    website_url: doc?.hutInfo?.hutWebsite ?? existing?.website_url ?? null,
+    booking_platform: existing?.booking_platform ?? "hut-reservation.org",
+    phone: doc?.hutInfo?.phone ?? existing?.phone ?? null,
+    email: existing?.email ?? null,
+    warden_name: doc?.hutInfo?.hutWarden ?? existing?.warden_name ?? null,
+    sleeping_places_total: existing?.sleeping_places_total ?? null,
+    price_from_eur: existing?.price_from_eur ?? null,
+    latitude: doc?.location?.latitude ?? existing?.latitude ?? null,
+    longitude: doc?.location?.longitude ?? existing?.longitude ?? null,
+    source_url: bookingUrl ?? existing?.source_url ?? null,
   });
 }
 const hutsRowsExtended = [...hutsMap.values()];

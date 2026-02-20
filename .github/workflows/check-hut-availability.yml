@@ -16,6 +16,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Restore hut info cache
+        uses: actions/cache@v4
+        with:
+          path: scrapers/hut-reservation/.cache/hut-info
+          key: hut-info-cache-v1
+
       - name: Build hut list from route coverage
         run: |
           node scrapers/hut-reservation/generate-huts-from-tour-coverage.mjs \
@@ -33,7 +39,11 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TOUR_COVERAGE_FILE: ./tour-id-coverage.json
           HUT_LIST_FILE: ./huts.from-coverage.json
-          REQUEST_DELAY_SECONDS: "0.05"
+          FETCH_HUT_INFO: "false"
+          REQUEST_DELAY_SECONDS: "0.12"
+          MAX_RETRIES: "2"
+          RETRY_DELAY_SECONDS: "2"
+          BLOCK_COOLDOWN_SECONDS: "10"
 
       - name: Upload availability results
         uses: actions/upload-artifact@v4

@@ -19,6 +19,7 @@ RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-6}"
 BLOCK_COOLDOWN_SECONDS="${BLOCK_COOLDOWN_SECONDS:-45}"
 HUT_INFO_CACHE_DIR="${HUT_INFO_CACHE_DIR:-.cache/hut-info}"
 HUT_INFO_CACHE_TTL_HOURS="${HUT_INFO_CACHE_TTL_HOURS:-168}"
+FETCH_HUT_INFO="${FETCH_HUT_INFO:-true}"
 
 # Legacy fallback when no hut list is available
 LEGACY_HUT_IDS=(366 476)
@@ -190,7 +191,7 @@ for row in "${HUT_ROWS[@]}"; do
   hut_info_cache_file="${HUT_INFO_CACHE_DIR}/hut-${hut_id}.json"
   hut_info_ttl_seconds=$((HUT_INFO_CACHE_TTL_HOURS * 3600))
   hut_info_response=""
-  if cache_is_fresh "$hut_info_cache_file" "$hut_info_ttl_seconds"; then
+  if [ -f "$hut_info_cache_file" ] && { [ "$FETCH_HUT_INFO" != "true" ] || cache_is_fresh "$hut_info_cache_file" "$hut_info_ttl_seconds"; }; then
     if cached_json=$(cat "$hut_info_cache_file"); then
       if echo "$cached_json" | jq -e '.hutId? != null' >/dev/null 2>&1; then
         hut_info_response="$cached_json"
@@ -199,7 +200,7 @@ for row in "${HUT_ROWS[@]}"; do
     fi
   fi
 
-  if [ -z "$hut_info_response" ]; then
+  if [ -z "$hut_info_response" ] && [ "$FETCH_HUT_INFO" = "true" ]; then
     hut_info_response=$(fetch_with_retries "${API_HUT_INFO_URL}/${hut_id}" false || true)
     if [ -n "$hut_info_response" ] && echo "$hut_info_response" | jq -e '.hutId? != null' >/dev/null 2>&1; then
       printf '%s' "$hut_info_response" > "$hut_info_cache_file"
@@ -301,6 +302,7 @@ echo "=========================================="
 echo -e "${GREEN}Check completed!${NC}"
 echo "Results saved in: $OUTPUT_DIR/"
 echo "Hut info cache: ${cache_hit_count} hits / ${cache_miss_count} misses (TTL ${HUT_INFO_CACHE_TTL_HOURS}h)"
+echo "Hut info fetch enabled: ${FETCH_HUT_INFO}"
 echo "=========================================="
 
 # Add artifacts info to summary

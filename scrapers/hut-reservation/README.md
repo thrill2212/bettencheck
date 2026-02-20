@@ -52,9 +52,21 @@ Wichtige Optimierungs-Parameter:
 ```bash
 HUT_INFO_CACHE_DIR=.cache/hut-info \
 HUT_INFO_CACHE_TTL_HOURS=168 \
+FETCH_HUT_INFO=true \
 REQUEST_DELAY_SECONDS=0.40 \
 MAX_RETRIES=6 \
 BLOCK_COOLDOWN_SECONDS=45 \
+bash check-availability.sh
+```
+
+Schnellmodus fuer haeufige Runs (nur Availability, Metadaten bleiben aus DB/Cache erhalten):
+
+```bash
+FETCH_HUT_INFO=false \
+REQUEST_DELAY_SECONDS=0.12 \
+MAX_RETRIES=2 \
+RETRY_DELAY_SECONDS=2 \
+BLOCK_COOLDOWN_SECONDS=10 \
 bash check-availability.sh
 ```
 

@@ -59,7 +59,8 @@ node generate-huts-from-tour-coverage.mjs \
   --output ./huts.from-coverage.json
 
 HUT_LIST_FILE=./huts.from-coverage.json \
-REQUEST_DELAY_SECONDS=0.40 \
+FETCH_HUT_INFO=false \
+REQUEST_DELAY_SECONDS=0.12 \
 MAX_RETRIES=6 \
 RETRY_DELAY_SECONDS=6 \
 BLOCK_COOLDOWN_SECONDS=45 \
