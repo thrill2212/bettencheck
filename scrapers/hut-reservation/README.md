@@ -5,7 +5,7 @@ Prueft die Verfuegbarkeit von Huetten auf [hut-reservation.org](https://www.hut-
 ## Was ist neu
 
 - Der Availability-Run nutzt jetzt eine Hutliste aus `huts.json` (statt nur 2 hardcoded IDs).
-- Pro Huette wird zusaetzlich `hutInfo/{hutId}` abgefragt.
+- Pro Huette kann optional zusaetzlich `hutInfo/{hutId}` abgefragt werden (`FETCH_HUT_INFO=true`).
 - `hutInfo` wird lokal gecacht (Standard: 168h), um API-Requests deutlich zu reduzieren.
 - Wenn verfuegbar, wird die Location aus `coordinates` als `latitude`/`longitude` gespeichert.
 - IDs und Huettennamen werden separat in `hut-id-name-map.json` gepflegt.
@@ -70,7 +70,7 @@ BLOCK_COOLDOWN_SECONDS=10 \
 bash check-availability.sh
 ```
 
-### Tour-basierter Voll-Lauf (empfohlen)
+### Tour-basierter Voll-Lauf
 
 Huettenliste direkt aus dem Tour-Mapping erzeugen:
 
@@ -80,7 +80,22 @@ node generate-huts-from-tour-coverage.mjs \
   --output ./huts.from-coverage.json
 
 HUT_LIST_FILE=./huts.from-coverage.json \
-REQUEST_DELAY_SECONDS=0.05 \
+FETCH_HUT_INFO=true \
+REQUEST_DELAY_SECONDS=0.20 \
+bash check-availability.sh
+```
+
+### 3h Produktionslauf (rotierender Fast-Run)
+
+Empfohlene Parameter fuer haeufige Runs:
+
+```bash
+HUT_LIST_FILE=./huts.selected.json \
+FETCH_HUT_INFO=false \
+REQUEST_DELAY_SECONDS=0.10 \
+MAX_RETRIES=2 \
+RETRY_DELAY_SECONDS=2 \
+BLOCK_COOLDOWN_SECONDS=8 \
 bash check-availability.sh
 ```
 
@@ -97,7 +112,8 @@ Die Datei `tour-id-coverage.json` dient als Mapping (`routeId -> huts[ohrsHutId]
 
 ## GitHub Actions
 
-- **Automatisch:** Alle 3 Stunden
+- **Automatisch (Fast):** Alle 3 Stunden als rotierender 2-Shard-Run
+- **Automatisch (Full):** 1x taeglich als Voll-Refresh mit `FETCH_HUT_INFO=true`
 - **Manuell:** Actions Tab -> "Check Hut Availability" -> "Run workflow"
 
 ## Output

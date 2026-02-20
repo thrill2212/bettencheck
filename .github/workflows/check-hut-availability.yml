@@ -7,6 +7,19 @@ on:
 
   # Allow manual trigger
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode"
+        required: false
+        default: rotating
+        type: choice
+        options:
+          - rotating
+          - full
+
+concurrency:
+  group: hut-availability-global
+  cancel-in-progress: false
 
 jobs:
   check-availability:
@@ -30,6 +43,42 @@ jobs:
           echo "Generated hut list:"
           wc -l scrapers/hut-reservation/huts.from-coverage.json || true
 
+      - name: Select run profile and hut subset
+        id: select_profile
+        run: |
+          set -euo pipefail
+          mode="${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'rotating' }}"
+          if [ "$mode" = "full" ]; then
+            cp scrapers/hut-reservation/huts.from-coverage.json scrapers/hut-reservation/huts.selected.json
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            echo "shard=all" >> "$GITHUB_OUTPUT"
+            echo "fetch_hut_info=true" >> "$GITHUB_OUTPUT"
+            echo "request_delay=0.20" >> "$GITHUB_OUTPUT"
+            echo "max_retries=4" >> "$GITHUB_OUTPUT"
+            echo "retry_delay=4" >> "$GITHUB_OUTPUT"
+            echo "block_cooldown=20" >> "$GITHUB_OUTPUT"
+          else
+            hour_utc=$(date -u +%H)
+            slot=$(( (10#$hour_utc / 3) % 2 ))
+            jq --argjson slot "$slot" 'map(select(((.hutId|tonumber) % 2) == $slot))' \
+              scrapers/hut-reservation/huts.from-coverage.json \
+              > scrapers/hut-reservation/huts.selected.json
+            selected_count=$(jq 'length' scrapers/hut-reservation/huts.selected.json)
+            if [ "$selected_count" -eq 0 ]; then
+              cp scrapers/hut-reservation/huts.from-coverage.json scrapers/hut-reservation/huts.selected.json
+              slot="fallback-full"
+            fi
+            echo "mode=rotating" >> "$GITHUB_OUTPUT"
+            echo "shard=$slot" >> "$GITHUB_OUTPUT"
+            echo "fetch_hut_info=false" >> "$GITHUB_OUTPUT"
+            echo "request_delay=0.10" >> "$GITHUB_OUTPUT"
+            echo "max_retries=2" >> "$GITHUB_OUTPUT"
+            echo "retry_delay=2" >> "$GITHUB_OUTPUT"
+            echo "block_cooldown=8" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Selected huts:"
+          jq 'length' scrapers/hut-reservation/huts.selected.json
+
       - name: Check hut availability
         id: scrape_hut_reservation
         run: bash scrapers/hut-reservation/check-availability.sh
@@ -38,18 +87,18 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TOUR_COVERAGE_FILE: ./tour-id-coverage.json
-          HUT_LIST_FILE: ./huts.from-coverage.json
-          FETCH_HUT_INFO: "false"
-          REQUEST_DELAY_SECONDS: "0.12"
-          MAX_RETRIES: "2"
-          RETRY_DELAY_SECONDS: "2"
-          BLOCK_COOLDOWN_SECONDS: "10"
+          HUT_LIST_FILE: ./huts.selected.json
+          FETCH_HUT_INFO: ${{ steps.select_profile.outputs.fetch_hut_info }}
+          REQUEST_DELAY_SECONDS: ${{ steps.select_profile.outputs.request_delay }}
+          MAX_RETRIES: ${{ steps.select_profile.outputs.max_retries }}
+          RETRY_DELAY_SECONDS: ${{ steps.select_profile.outputs.retry_delay }}
+          BLOCK_COOLDOWN_SECONDS: ${{ steps.select_profile.outputs.block_cooldown }}
 
       - name: Upload availability results
         uses: actions/upload-artifact@v4
-        if: always()
+        if: failure() || github.event_name == 'workflow_dispatch'
         with:
-          name: hut-availability-results-${{ github.run_number }}
+          name: hut-availability-results-${{ github.run_number }}-${{ steps.select_profile.outputs.mode }}-${{ steps.select_profile.outputs.shard }}
           path: scrapers/hut-reservation/availability-results/*.json
           retention-days: 90
 
@@ -57,6 +106,8 @@ jobs:
         if: always()
         run: |
           echo "✅ Hut availability check completed"
+          echo "Mode: ${{ steps.select_profile.outputs.mode }}"
+          echo "Shard: ${{ steps.select_profile.outputs.shard }}"
           echo "📁 Results have been saved as artifacts"
 
           if compgen -G "scrapers/hut-reservation/availability-results/*.json" > /dev/null; then

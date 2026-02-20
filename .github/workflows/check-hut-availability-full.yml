@@ -1,0 +1,49 @@
+name: Check Hut Availability (Full Refresh)
+
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: hut-availability-global
+  cancel-in-progress: false
+
+jobs:
+  check-availability-full:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build hut list from route coverage
+        run: |
+          node scrapers/hut-reservation/generate-huts-from-tour-coverage.mjs \
+            --input scrapers/hut-reservation/tour-id-coverage.json \
+            --output scrapers/hut-reservation/huts.from-coverage.json
+          echo "Generated hut list:"
+          jq 'length' scrapers/hut-reservation/huts.from-coverage.json
+
+      - name: Check hut availability (full)
+        run: bash scrapers/hut-reservation/check-availability.sh
+        working-directory: ${{ github.workspace }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TOUR_COVERAGE_FILE: ./tour-id-coverage.json
+          HUT_LIST_FILE: ./huts.from-coverage.json
+          FETCH_HUT_INFO: "true"
+          REQUEST_DELAY_SECONDS: "0.20"
+          MAX_RETRIES: "4"
+          RETRY_DELAY_SECONDS: "4"
+          BLOCK_COOLDOWN_SECONDS: "20"
+
+      - name: Upload availability results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hut-availability-full-results-${{ github.run_number }}
+          path: scrapers/hut-reservation/availability-results/*.json
+          retention-days: 30
+

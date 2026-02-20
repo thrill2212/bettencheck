@@ -8,6 +8,7 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 .
 ├── .github/
 │   └── workflows/           # GitHub Actions Workflows
+│       ├── check-hut-availability-full.yml
 │       ├── check-hut-availability.yml
 │       ├── check-huettenholiday-availability.yml
 │       └── check-casablanca-availability.yml
@@ -42,9 +43,11 @@ Prüft Hüttenverfügbarkeit auf hut-reservation.org.
 - **Hütten:** aus `tour-id-coverage.json` (empfohlen) oder `huts.json`
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-hut-availability.yml`
+- **Full-Refresh:** Täglich über `.github/workflows/check-hut-availability-full.yml`
 - **Dokumentation:** [scrapers/hut-reservation/README.md](scrapers/hut-reservation/README.md)
 - **Live-Sync:** Optionaler Upsert nach Supabase via `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
 - **Optimierungen:**
+  - 3h-Workflow nutzt rotierende 2-Shards (jede Hütte alle 6h) zur Entlastung der API
   - Robustes Retry/Backoff bei `403/429` (WAF-Block)
   - `hutInfo`-Cache mit TTL (weniger API-Requests)
   - Supabase-Upsert verarbeitet nur die neueste Datei je Hütte (schneller bei großem History-Ordner)
@@ -61,9 +64,9 @@ node generate-huts-from-tour-coverage.mjs \
 HUT_LIST_FILE=./huts.from-coverage.json \
 FETCH_HUT_INFO=false \
 REQUEST_DELAY_SECONDS=0.12 \
-MAX_RETRIES=6 \
-RETRY_DELAY_SECONDS=6 \
-BLOCK_COOLDOWN_SECONDS=45 \
+MAX_RETRIES=2 \
+RETRY_DELAY_SECONDS=2 \
+BLOCK_COOLDOWN_SECONDS=8 \
 HUT_INFO_CACHE_TTL_HOURS=168 \
 TOUR_COVERAGE_FILE=./tour-id-coverage.json \
 bash check-availability.sh
@@ -188,6 +191,7 @@ Alle Scraper laufen automatisch als GitHub Actions:
 - **Artifacts:** Download der JSON-Ergebnisse
 - **Summary:** Schnellübersicht in jedem Run
 - **Manual Trigger:** "Run workflow" Button für sofortige Ausführung
+- **Hut-Reservation-Strategie:** 3h Rotations-Run (günstig/schnell) + täglicher Full-Refresh
 
 ### Relevante Secrets für Live-Sync
 
