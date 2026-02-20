@@ -6,6 +6,7 @@ Prueft die Verfuegbarkeit von Huetten auf [hut-reservation.org](https://www.hut-
 
 - Der Availability-Run nutzt jetzt eine Hutliste aus `huts.json` (statt nur 2 hardcoded IDs).
 - Pro Huette wird zusaetzlich `hutInfo/{hutId}` abgefragt.
+- `hutInfo` wird lokal gecacht (Standard: 168h), um API-Requests deutlich zu reduzieren.
 - Wenn verfuegbar, wird die Location aus `coordinates` als `latitude`/`longitude` gespeichert.
 - IDs und Huettennamen werden separat in `hut-id-name-map.json` gepflegt.
 - Optionaler Supabase-Sync schreibt die Daten direkt in:
@@ -44,6 +45,17 @@ Optionale Parameter:
 
 ```bash
 HUT_LIST_FILE=huts.json REQUEST_DELAY_SECONDS=0.10 bash check-availability.sh
+```
+
+Wichtige Optimierungs-Parameter:
+
+```bash
+HUT_INFO_CACHE_DIR=.cache/hut-info \
+HUT_INFO_CACHE_TTL_HOURS=168 \
+REQUEST_DELAY_SECONDS=0.40 \
+MAX_RETRIES=6 \
+BLOCK_COOLDOWN_SECONDS=45 \
+bash check-availability.sh
 ```
 
 ### Tour-basierter Voll-Lauf (empfohlen)
@@ -111,6 +123,7 @@ Das Script erstellt JSON-Dateien im Verzeichnis `availability-results/`:
 ```
 
 Wenn Supabase-Credentials gesetzt sind, wird danach automatisch `upsert-supabase.mjs` ausgefuehrt.
+Der Upsert verarbeitet dabei nur die neueste Availability-Datei pro Huette (schneller bei grossen historischen Ordnern).
 
 ## Dependencies
 

@@ -181,17 +181,27 @@ const tours = Array.isArray(coverage.tours) ? coverage.tours : [];
 const availabilityFiles = fs
   .readdirSync(outputDir)
   .filter((f) => f.endsWith(".json"))
-  .map((f) => path.join(outputDir, f));
+  .map((f) => path.join(outputDir, f))
+  .map((file) => ({ file, mtimeMs: fs.statSync(file).mtimeMs }))
+  .sort((a, b) => b.mtimeMs - a.mtimeMs)
+  .map((x) => x.file);
 
-const availabilityDocs = availabilityFiles.map((f) => JSON.parse(fs.readFileSync(f, "utf8")));
+// Keep only the newest file per hut reference to avoid re-reading the full history.
+const availabilityDocs = [];
+const seenHutRefs = new Set();
+for (const file of availabilityFiles) {
+  const doc = JSON.parse(fs.readFileSync(file, "utf8"));
+  const hutRef = String(doc?.sourceHutRef ?? doc?.hutId ?? "").trim();
+  if (!hutRef || seenHutRefs.has(hutRef)) continue;
+  seenHutRefs.add(hutRef);
+  availabilityDocs.push(doc);
+}
+
 const latestByHutRef = new Map();
 for (const doc of availabilityDocs) {
-  const hutRef = String(doc?.sourceHutRef ?? doc?.hutId ?? "");
+  const hutRef = String(doc?.sourceHutRef ?? doc?.hutId ?? "").trim();
   if (!hutRef) continue;
-  const prev = latestByHutRef.get(hutRef);
-  const prevTs = prev ? Date.parse(prev.checkedAt ?? "") : -1;
-  const nextTs = Date.parse(doc?.checkedAt ?? "");
-  if (!prev || (Number.isFinite(nextTs) && nextTs >= prevTs)) latestByHutRef.set(hutRef, doc);
+  latestByHutRef.set(hutRef, doc);
 }
 
 const allRefs = new Set();
@@ -399,6 +409,7 @@ await upsertBatched("scrape_runs", [
       source: "hut-reservation",
       inputDir: outputDir,
       fileCount: availabilityFiles.length,
+      selectedFileCount: availabilityDocs.length,
       routeCount: routesRows.length,
       hutCount: hutsRowsExtended.length,
       stageCount: stageRowsExtended.length,

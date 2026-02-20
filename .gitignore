@@ -2,6 +2,9 @@
 **/availability-results/
 **/results/
 summary.md
+**/.cache/
+**/.cookies.txt
+**/huts.from-coverage.json
 
 # OS files
 .DS_Store

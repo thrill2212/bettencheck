@@ -17,6 +17,8 @@ COOKIE_JAR="${COOKIE_JAR:-.cookies.txt}"
 MAX_RETRIES="${MAX_RETRIES:-6}"
 RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-6}"
 BLOCK_COOLDOWN_SECONDS="${BLOCK_COOLDOWN_SECONDS:-45}"
+HUT_INFO_CACHE_DIR="${HUT_INFO_CACHE_DIR:-.cache/hut-info}"
+HUT_INFO_CACHE_TTL_HOURS="${HUT_INFO_CACHE_TTL_HOURS:-168}"
 
 # Legacy fallback when no hut list is available
 LEGACY_HUT_IDS=(366 476)
@@ -30,6 +32,31 @@ NC='\033[0m' # No Color
 
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
+mkdir -p "$HUT_INFO_CACHE_DIR"
+
+cache_hit_count=0
+cache_miss_count=0
+
+get_file_mtime_epoch() {
+  local file="$1"
+  if stat -f %m "$file" >/dev/null 2>&1; then
+    stat -f %m "$file"
+  else
+    stat -c %Y "$file"
+  fi
+}
+
+cache_is_fresh() {
+  local file="$1"
+  local ttl_seconds="$2"
+  [ -f "$file" ] || return 1
+  local now_epoch
+  now_epoch=$(date +%s)
+  local mtime_epoch
+  mtime_epoch=$(get_file_mtime_epoch "$file")
+  local age_seconds=$((now_epoch - mtime_epoch))
+  [ "$age_seconds" -ge 0 ] && [ "$age_seconds" -lt "$ttl_seconds" ]
+}
 
 # Prime session cookies once before API requests
 prime_session() {
@@ -160,7 +187,25 @@ for row in "${HUT_ROWS[@]}"; do
   fi
 
   # Fetch hut info to enrich metadata/location
-  hut_info_response=$(fetch_with_retries "${API_HUT_INFO_URL}/${hut_id}" false || true)
+  hut_info_cache_file="${HUT_INFO_CACHE_DIR}/hut-${hut_id}.json"
+  hut_info_ttl_seconds=$((HUT_INFO_CACHE_TTL_HOURS * 3600))
+  hut_info_response=""
+  if cache_is_fresh "$hut_info_cache_file" "$hut_info_ttl_seconds"; then
+    if cached_json=$(cat "$hut_info_cache_file"); then
+      if echo "$cached_json" | jq -e '.hutId? != null' >/dev/null 2>&1; then
+        hut_info_response="$cached_json"
+        cache_hit_count=$((cache_hit_count + 1))
+      fi
+    fi
+  fi
+
+  if [ -z "$hut_info_response" ]; then
+    hut_info_response=$(fetch_with_retries "${API_HUT_INFO_URL}/${hut_id}" false || true)
+    if [ -n "$hut_info_response" ] && echo "$hut_info_response" | jq -e '.hutId? != null' >/dev/null 2>&1; then
+      printf '%s' "$hut_info_response" > "$hut_info_cache_file"
+      cache_miss_count=$((cache_miss_count + 1))
+    fi
+  fi
 
   hut_info_json='{}'
   if [ -n "$hut_info_response" ] && echo "$hut_info_response" | jq -e '.hutId? != null' >/dev/null 2>&1; then
@@ -255,6 +300,7 @@ done
 echo "=========================================="
 echo -e "${GREEN}Check completed!${NC}"
 echo "Results saved in: $OUTPUT_DIR/"
+echo "Hut info cache: ${cache_hit_count} hits / ${cache_miss_count} misses (TTL ${HUT_INFO_CACHE_TTL_HOURS}h)"
 echo "=========================================="
 
 # Add artifacts info to summary
@@ -266,6 +312,7 @@ echo "Each file contains:" >> "$summary_file"
 echo "- Season-filtered availability days" >> "$summary_file"
 echo "- Availability counts" >> "$summary_file"
 echo "- Hut metadata and location (if available via API)" >> "$summary_file"
+echo "- Hut info cache usage: ${cache_hit_count} hits / ${cache_miss_count} misses" >> "$summary_file"
 
 # Optional: Sync results to Supabase when credentials are provided.
 if [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
