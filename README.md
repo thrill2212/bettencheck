@@ -39,11 +39,41 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 Prüft Hüttenverfügbarkeit auf hut-reservation.org.
 
 - **Plattform:** [hut-reservation.org](https://www.hut-reservation.org)
-- **Hütten:** aus `huts.json` (Discovery über `discover-huts.sh`)
+- **Hütten:** aus `tour-id-coverage.json` (empfohlen) oder `huts.json`
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-hut-availability.yml`
 - **Dokumentation:** [scrapers/hut-reservation/README.md](scrapers/hut-reservation/README.md)
 - **Live-Sync:** Optionaler Upsert nach Supabase via `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
+- **Optimierungen:**
+  - Robustes Retry/Backoff bei `403/429` (WAF-Block)
+  - `hutInfo`-Cache mit TTL (weniger API-Requests)
+  - Supabase-Upsert verarbeitet nur die neueste Datei je Hütte (schneller bei großem History-Ordner)
+
+#### Empfohlener produktiver Flow
+
+```bash
+cd scrapers/hut-reservation
+
+node generate-huts-from-tour-coverage.mjs \
+  --input ./tour-id-coverage.json \
+  --output ./huts.from-coverage.json
+
+HUT_LIST_FILE=./huts.from-coverage.json \
+REQUEST_DELAY_SECONDS=0.40 \
+MAX_RETRIES=6 \
+RETRY_DELAY_SECONDS=6 \
+BLOCK_COOLDOWN_SECONDS=45 \
+HUT_INFO_CACHE_TTL_HOURS=168 \
+TOUR_COVERAGE_FILE=./tour-id-coverage.json \
+bash check-availability.sh
+```
+
+Für Live-Sync zusätzlich:
+
+```bash
+export SUPABASE_URL=...
+export SUPABASE_SERVICE_ROLE_KEY=...
+```
 
 ### 2. Hüttenholiday (`scrapers/huettenholiday/`)
 
@@ -158,26 +188,10 @@ Alle Scraper laufen automatisch als GitHub Actions:
 - **Summary:** Schnellübersicht in jedem Run
 - **Manual Trigger:** "Run workflow" Button für sofortige Ausführung
 
-### Supabase Upsert (neu)
-
-Nach jedem Scraper-Run normalisiert ein Node-Script die Rohdaten und schreibt sie nach Supabase:
-
-- Script: `scripts/normalize-and-upsert.mjs`
-- Mapping: `scripts/lib/provider-mapping.json`
-- Zieltabellen: `availability_daily`, `scrape_runs`
-
-Erforderliche Repository-Secrets:
+### Relevante Secrets für Live-Sync
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
-
-Lokaler Test:
-
-```bash
-node scripts/normalize-and-upsert.mjs --source hut-reservation
-node --test scripts/tests/normalize.test.mjs
-```
-
 ## Artifacts
 
 Ergebnisse werden als Artifacts gespeichert:
@@ -194,6 +208,13 @@ Die meisten GitHub Runner haben vorinstalliert:
 - `git`
 
 Für spezielle Dependencies, siehe den jeweiligen Scraper.
+
+## Live-Daten in Website bringen (Kurzcheckliste)
+
+1. Scraper in `scrapers/hut-reservation` mit Tour-Coverage laufen lassen.
+2. Prüfen, dass `upsert-supabase.mjs` am Ende `upserted: true` ausgibt.
+3. In der Website (`huettentouren_org`) `npm run check:live-routes` ausführen.
+4. Erwartung: keine `missingHutIds`, alle Zielrouten `isReady: true`.
 
 ## Beispiele für weitere Scraper
 
