@@ -13,7 +13,12 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 │       └── check-casablanca-availability.yml
 ├── scrapers/
 │   ├── hut-reservation/     # Hüttenbuchungen (hut-reservation.org)
+│   │   ├── discover-huts.sh
 │   │   ├── check-availability.sh
+│   │   ├── upsert-supabase.mjs
+│   │   ├── huts.json
+│   │   ├── hut-id-name-map.json
+│   │   ├── tour-id-coverage.json
 │   │   ├── availability-results/
 │   │   └── README.md
 │   ├── huettenholiday/      # Hüttenbuchungen (huetten-holiday.com)
@@ -34,10 +39,11 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 Prüft Hüttenverfügbarkeit auf hut-reservation.org.
 
 - **Plattform:** [hut-reservation.org](https://www.hut-reservation.org)
-- **Hütten:** Braunschweiger Hütte, Martin-Busch-Hütte
+- **Hütten:** aus `huts.json` (Discovery über `discover-huts.sh`)
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-hut-availability.yml`
 - **Dokumentation:** [scrapers/hut-reservation/README.md](scrapers/hut-reservation/README.md)
+- **Live-Sync:** Optionaler Upsert nach Supabase via `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
 
 ### 2. Hüttenholiday (`scrapers/huettenholiday/`)
 

@@ -1,0 +1,316 @@
+{
+  "generatedAt": "2026-02-20T18:58:05.694Z",
+  "source": {
+    "toursLayer": "https://services1.arcgis.com/PHS4LHADrqt5glC9/arcgis/rest/services/AVT_CAA_TOUR_View_L/FeatureServer/0",
+    "hutsLayer": "https://services1.arcgis.com/PHS4LHADrqt5glC9/ArcGIS/rest/services/AVT_GEO_CAA_HUETTEN_View_P/FeatureServer/0",
+    "extractedAt": "2026-02-20T18:54:57.738Z"
+  },
+  "tours": [
+    {
+      "routeId": "berliner-hoehenweg",
+      "tourName": "Berliner Höhenweg",
+      "huts": [
+        {
+          "name": "Gamshütte",
+          "ohrsHutId": "169"
+        },
+        {
+          "name": "Friesenberghaus",
+          "ohrsHutId": "170"
+        },
+        {
+          "name": "Olpererhütte",
+          "ohrsHutId": "119"
+        },
+        {
+          "name": "Furtschaglhaus",
+          "ohrsHutId": "180"
+        },
+        {
+          "name": "Berliner Hütte",
+          "ohrsHutId": "105"
+        },
+        {
+          "name": "Greizer Hütte",
+          "ohrsHutId": "122"
+        },
+        {
+          "name": "Kasseler Hütte",
+          "ohrsHutId": "178"
+        },
+        {
+          "name": "Karl-von-Edel-Hütte",
+          "ohrsHutId": "203"
+        }
+      ]
+    },
+    {
+      "routeId": "chiemgautour",
+      "tourName": "Chiemgautour",
+      "huts": [
+        {
+          "name": "Hochrieshütte",
+          "ohrsHutId": null
+        },
+        {
+          "name": "Spitzsteinhaus",
+          "ohrsHutId": "57"
+        },
+        {
+          "name": "Priener Hütte",
+          "ohrsHutId": "407"
+        }
+      ]
+    },
+    {
+      "routeId": "dachsteinrunde",
+      "tourName": "Dachsteinrunde",
+      "huts": [
+        {
+          "name": "Adamek-Hütte",
+          "ohrsHutId": "491"
+        },
+        {
+          "name": "Simony-Hütte",
+          "ohrsHutId": "219"
+        },
+        {
+          "name": "Guttenberg-Haus",
+          "ohrsHutId": "260"
+        },
+        {
+          "name": "Austria-Hütte",
+          "ohrsHutId": "262"
+        }
+      ]
+    },
+    {
+      "routeId": "inntaler-hoehenweg",
+      "tourName": "Inntaler Höhenweg",
+      "huts": [
+        {
+          "name": "Glungezer-Hütte",
+          "ohrsHutId": "62"
+        },
+        {
+          "name": "Lizumer Hütte",
+          "ohrsHutId": "720"
+        },
+        {
+          "name": "Weidener Hütte",
+          "ohrsHutId": "216"
+        },
+        {
+          "name": "Rastkogelhütte",
+          "ohrsHutId": "205"
+        },
+        {
+          "name": "Kellerjoch-Hütte",
+          "ohrsHutId": "415"
+        }
+      ]
+    },
+    {
+      "routeId": "karnischer-hoehenweg",
+      "tourName": "Karnischer Höhenweg",
+      "huts": [
+        {
+          "name": "Sillianer Hütte",
+          "ohrsHutId": "466"
+        },
+        {
+          "name": "Obstansersee-Hütte",
+          "ohrsHutId": "268"
+        },
+        {
+          "name": "Filmoor-Standschützen-Hütte",
+          "ohrsHutId": "489"
+        },
+        {
+          "name": "Porze-Hütte",
+          "ohrsHutId": "185"
+        },
+        {
+          "name": "Hochweißstein-Haus",
+          "ohrsHutId": "328"
+        },
+        {
+          "name": "Wolayersee-Hütte",
+          "ohrsHutId": "267"
+        },
+        {
+          "name": "Zollnersee-Hütte",
+          "ohrsHutId": "109"
+        }
+      ]
+    },
+    {
+      "routeId": "karwendel-hoehenweg",
+      "tourName": "Karwendel Höhenweg",
+      "huts": [
+        {
+          "name": "Nördlinger Hütte",
+          "ohrsHutId": "202"
+        },
+        {
+          "name": "Solstein-Haus",
+          "ohrsHutId": null
+        },
+        {
+          "name": "Pfeis-Hütte",
+          "ohrsHutId": "179"
+        },
+        {
+          "name": "Bettelwurf-Hütte",
+          "ohrsHutId": "72"
+        },
+        {
+          "name": "Hallerangerhaus",
+          "ohrsHutId": "82"
+        }
+      ]
+    },
+    {
+      "routeId": "lechquellenrunde",
+      "tourName": "Lechquellenrunde",
+      "huts": [
+        {
+          "name": "Biberacher Hütte",
+          "ohrsHutId": "222"
+        },
+        {
+          "name": "Göppinger Hütte",
+          "ohrsHutId": "183"
+        },
+        {
+          "name": "Freiburger Hütte",
+          "ohrsHutId": "97"
+        },
+        {
+          "name": "Ravensburger Hütte",
+          "ohrsHutId": null
+        }
+      ]
+    },
+    {
+      "routeId": "montafoner-huettenrunde",
+      "tourName": "Montafoner Hüttenrunde",
+      "huts": [
+        {
+          "name": "Wormser Hütte",
+          "ohrsHutId": "667"
+        },
+        {
+          "name": "Neue Heilbronner Hütte",
+          "ohrsHutId": null
+        },
+        {
+          "name": "Wiesbadener Hütte",
+          "ohrsHutId": "234"
+        },
+        {
+          "name": "Saarbrücker Hütte",
+          "ohrsHutId": "309"
+        },
+        {
+          "name": "Tübinger Hütte",
+          "ohrsHutId": "236"
+        },
+        {
+          "name": "Tilisuna-Hütte",
+          "ohrsHutId": "91"
+        },
+        {
+          "name": "Lindauer Hütte",
+          "ohrsHutId": "297"
+        },
+        {
+          "name": "Totalp-Hütte",
+          "ohrsHutId": "92"
+        },
+        {
+          "name": "Heinrich-Hueter-Hütte",
+          "ohrsHutId": "89"
+        }
+      ]
+    },
+    {
+      "routeId": "pitztaltour",
+      "tourName": "Pitztaltour",
+      "huts": [
+        {
+          "name": "Taschachhaus",
+          "ohrsHutId": "231"
+        },
+        {
+          "name": "Riffelseehütte",
+          "ohrsHutId": "171"
+        },
+        {
+          "name": "Kaunergrathütte",
+          "ohrsHutId": "271"
+        }
+      ]
+    },
+    {
+      "routeId": "sellrainer-huettenrunde",
+      "tourName": "Sellrainer Hüttenrunde",
+      "huts": [
+        {
+          "name": "Potsdamer Hütte",
+          "ohrsHutId": "283"
+        },
+        {
+          "name": "Westfalenhaus",
+          "ohrsHutId": "541"
+        },
+        {
+          "name": "Pforzheimer Hütte",
+          "ohrsHutId": "239"
+        },
+        {
+          "name": "Schweinfurter Hütte",
+          "ohrsHutId": null
+        },
+        {
+          "name": "Bielefelder Hütte",
+          "ohrsHutId": null
+        },
+        {
+          "name": "Dortmunder Hütte",
+          "ohrsHutId": null
+        }
+      ]
+    },
+    {
+      "routeId": "stubaier-hoehenweg",
+      "tourName": "Stubaier Höhenweg",
+      "huts": [
+        {
+          "name": "Starkenburger Hütte",
+          "ohrsHutId": "693"
+        },
+        {
+          "name": "Franz-Senn-Hütte",
+          "ohrsHutId": "675"
+        },
+        {
+          "name": "Regensburger Hütte (Neue)",
+          "ohrsHutId": "275"
+        },
+        {
+          "name": "Dresdner Hütte",
+          "ohrsHutId": "692"
+        },
+        {
+          "name": "Sulzenauhütte",
+          "ohrsHutId": "648"
+        },
+        {
+          "name": "Nürnberger Hütte",
+          "ohrsHutId": "124"
+        }
+      ]
+    }
+  ]
+}

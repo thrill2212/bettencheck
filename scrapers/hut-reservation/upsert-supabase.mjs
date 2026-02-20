@@ -1,0 +1,431 @@
+#!/usr/bin/env node
+
+import fs from "node:fs";
+import path from "node:path";
+
+const scriptDir = path.dirname(new URL(import.meta.url).pathname);
+const outputDir = process.env.OUTPUT_DIR
+  ? path.resolve(process.cwd(), process.env.OUTPUT_DIR)
+  : path.join(scriptDir, "availability-results");
+const coverageFile = process.env.TOUR_COVERAGE_FILE
+  ? path.resolve(process.cwd(), process.env.TOUR_COVERAGE_FILE)
+  : path.join(scriptDir, "tour-id-coverage.json");
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const RUN_ID = process.env.GITHUB_RUN_ID ?? `local-${new Date().toISOString()}`;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.log(
+    JSON.stringify(
+      {
+        skipped: true,
+        reason: "SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing",
+      },
+      null,
+      2
+    )
+  );
+  process.exit(0);
+}
+
+if (!fs.existsSync(coverageFile)) {
+  throw new Error(`Coverage file missing: ${coverageFile}`);
+}
+
+if (!fs.existsSync(outputDir)) {
+  throw new Error(`Availability output dir missing: ${outputDir}`);
+}
+
+function slugify(value, fallback = "unknown") {
+  const cleaned = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || fallback;
+}
+
+function parseElevation(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.max(1, Math.round(raw));
+  const match = String(raw).match(/-?\d+/);
+  if (!match) return null;
+  const n = Number(match[0]);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(1, Math.round(n));
+}
+
+function parseBeds(day) {
+  if (typeof day?.availableBeds === "number" && Number.isFinite(day.availableBeds)) {
+    return Math.max(0, Math.round(day.availableBeds));
+  }
+  const cats = Array.isArray(day?.bedCategoriesData) ? day.bedCategoriesData : [];
+  if (cats.length === 0) return null;
+  let sum = 0;
+  let hasValue = false;
+  for (const c of cats) {
+    const n = Number(c?.totalFreePlaces);
+    if (Number.isFinite(n)) {
+      sum += n;
+      hasValue = true;
+    }
+  }
+  return hasValue ? Math.max(0, Math.round(sum)) : null;
+}
+
+function mapStatus(day) {
+  const raw = String(day?.hutStatus ?? "").toUpperCase();
+  if (raw === "CLOSED") return "closed";
+  const pct = Number(day?.percentage);
+  if (Number.isFinite(pct)) return pct > 0 ? "available" : "unavailable";
+  if (raw.includes("UNAVAILABLE") || raw.includes("FULL")) return "unavailable";
+  return "available";
+}
+
+function getSeasonWindow(now = new Date()) {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+  const day = now.getUTCDate();
+  const seasonYear = month > 10 || (month === 10 && day > 1) ? year + 1 : year;
+  return {
+    seasonStart: `${seasonYear}-06-01`,
+    seasonEnd: `${seasonYear}-10-01`,
+  };
+}
+
+async function postgrest(url, key, method, table, { rows, onConflict, query } = {}) {
+  const u = new URL(`${url.replace(/\/$/, "")}/rest/v1/${table}`);
+  if (onConflict) u.searchParams.set("on_conflict", onConflict);
+  if (query) {
+    for (const [k, v] of Object.entries(query)) {
+      u.searchParams.set(k, v);
+    }
+  }
+
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  };
+
+  if (method === "POST") {
+    headers.Prefer = "resolution=merge-duplicates,return=minimal";
+  }
+
+  const res = await fetch(u, {
+    method,
+    headers,
+    body: rows ? JSON.stringify(rows) : undefined,
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`${method} ${u} failed: ${res.status} ${body}`);
+  }
+}
+
+async function selectRows(table, query = {}) {
+  const u = new URL(`${SUPABASE_URL.replace(/\/$/, "")}/rest/v1/${table}`);
+  for (const [k, v] of Object.entries(query)) {
+    u.searchParams.set(k, v);
+  }
+  const res = await fetch(u, {
+    method: "GET",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`GET ${u} failed: ${res.status} ${body}`);
+  }
+  return res.json();
+}
+
+async function upsertBatched(table, rows, onConflict, batchSize = 500) {
+  if (!rows.length) return;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const chunk = rows.slice(i, i + batchSize);
+    await postgrest(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, "POST", table, {
+      rows: chunk,
+      onConflict,
+    });
+  }
+}
+
+async function upsertWithSchemaFallback({
+  table,
+  preferredRows,
+  fallbackRows,
+  onConflict,
+  batchSize,
+}) {
+  try {
+    await upsertBatched(table, preferredRows, onConflict, batchSize);
+    return { usedFallback: false };
+  } catch (error) {
+    const msg = String(error?.message ?? error);
+    if (!msg.includes("PGRST204")) throw error;
+    await upsertBatched(table, fallbackRows, onConflict, batchSize);
+    return { usedFallback: true, reason: msg };
+  }
+}
+
+const coverage = JSON.parse(fs.readFileSync(coverageFile, "utf8"));
+const tours = Array.isArray(coverage.tours) ? coverage.tours : [];
+
+const availabilityFiles = fs
+  .readdirSync(outputDir)
+  .filter((f) => f.endsWith(".json"))
+  .map((f) => path.join(outputDir, f));
+
+const availabilityDocs = availabilityFiles.map((f) => JSON.parse(fs.readFileSync(f, "utf8")));
+const latestByHutRef = new Map();
+for (const doc of availabilityDocs) {
+  const hutRef = String(doc?.sourceHutRef ?? doc?.hutId ?? "");
+  if (!hutRef) continue;
+  const prev = latestByHutRef.get(hutRef);
+  const prevTs = prev ? Date.parse(prev.checkedAt ?? "") : -1;
+  const nextTs = Date.parse(doc?.checkedAt ?? "");
+  if (!prev || (Number.isFinite(nextTs) && nextTs >= prevTs)) latestByHutRef.set(hutRef, doc);
+}
+
+const allRefs = new Set();
+for (const t of tours) {
+  for (const h of t.huts ?? []) {
+    const ref = String(h.ohrsHutId ?? "").trim();
+    if (ref) allRefs.add(ref);
+  }
+}
+for (const ref of latestByHutRef.keys()) allRefs.add(String(ref));
+
+const existingByRef = new Map();
+if (allRefs.size > 0) {
+  const refsCsv = [...allRefs].map((r) => `"${r}"`).join(",");
+  const existingRows = await selectRows("huts", {
+    select: "id,provider,provider_ref",
+    provider: "eq.hut-reservation",
+    provider_ref: `in.(${refsCsv})`,
+    limit: "5000",
+  });
+  for (const row of existingRows) {
+    if (row?.provider_ref) existingByRef.set(String(row.provider_ref), row.id);
+  }
+}
+
+function hutIdForRef(ref) {
+  return existingByRef.get(String(ref)) ?? `ohrs-${ref}`;
+}
+
+const { seasonStart, seasonEnd } = getSeasonWindow();
+
+const routesRows = tours.map((t) => ({
+  id: t.routeId,
+  name: t.tourName,
+  duration_days: Math.max(2, (t.huts?.length ?? 1) + 1),
+  season_start: seasonStart,
+  season_end: seasonEnd,
+  is_active: true,
+}));
+
+const hutsMap = new Map();
+for (const t of tours) {
+  for (const h of t.huts ?? []) {
+    const ref = String(h.ohrsHutId ?? "").trim();
+    if (!ref) continue;
+    const doc = latestByHutRef.get(ref);
+    const hutId = hutIdForRef(ref);
+    const name = h.name ?? doc?.hutName ?? `Hut ${ref}`;
+    const bookingUrl =
+      doc?.bookingUrl ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`;
+    const altitude = parseElevation(doc?.hutInfo?.altitude);
+    hutsMap.set(hutId, {
+      id: hutId,
+      provider: "hut-reservation",
+      provider_ref: ref,
+      name,
+      booking_url: bookingUrl,
+      operator: doc?.hutInfo?.providerName ?? doc?.hutInfo?.tenantCode ?? "unknown",
+      elevation_m: altitude ?? 1,
+      website_url: doc?.hutInfo?.hutWebsite ?? null,
+      booking_platform: "hut-reservation.org",
+      phone: doc?.hutInfo?.phone ?? null,
+      email: null,
+      warden_name: doc?.hutInfo?.hutWarden ?? null,
+      sleeping_places_total: null,
+      price_from_eur: null,
+      latitude: doc?.location?.latitude ?? null,
+      longitude: doc?.location?.longitude ?? null,
+      source_url: bookingUrl,
+    });
+  }
+}
+for (const [ref, doc] of latestByHutRef.entries()) {
+  const hutId = hutIdForRef(ref);
+  if (hutsMap.has(hutId)) continue;
+  const bookingUrl =
+    doc?.bookingUrl ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`;
+  const altitude = parseElevation(doc?.hutInfo?.altitude);
+  hutsMap.set(hutId, {
+    id: hutId,
+    provider: "hut-reservation",
+    provider_ref: ref,
+    name: doc?.hutName ?? `Hut ${ref}`,
+    booking_url: bookingUrl,
+    operator: doc?.hutInfo?.providerName ?? doc?.hutInfo?.tenantCode ?? "unknown",
+    elevation_m: altitude ?? 1,
+    website_url: doc?.hutInfo?.hutWebsite ?? null,
+    booking_platform: "hut-reservation.org",
+    phone: doc?.hutInfo?.phone ?? null,
+    email: null,
+    warden_name: doc?.hutInfo?.hutWarden ?? null,
+    sleeping_places_total: null,
+    price_from_eur: null,
+    latitude: doc?.location?.latitude ?? null,
+    longitude: doc?.location?.longitude ?? null,
+    source_url: bookingUrl,
+  });
+}
+const hutsRowsExtended = [...hutsMap.values()];
+const hutsRowsBase = hutsRowsExtended.map((h) => ({
+  id: h.id,
+  provider: h.provider,
+  provider_ref: h.provider_ref,
+  name: h.name,
+  booking_url: h.booking_url,
+  operator: h.operator,
+  elevation_m: h.elevation_m,
+}));
+
+const stageRowsExtended = [];
+for (const t of tours) {
+  const ordered = (t.huts ?? []).filter((h) => h.ohrsHutId != null && String(h.ohrsHutId).trim() !== "");
+  for (let i = 0; i < ordered.length; i += 1) {
+    const curr = ordered[i];
+    const prev = i > 0 ? ordered[i - 1] : null;
+    stageRowsExtended.push({
+      route_id: t.routeId,
+      day_index: i + 1,
+      hut_id: hutIdForRef(curr.ohrsHutId),
+      start_hut_id: prev ? hutIdForRef(prev.ohrsHutId) : null,
+      end_hut_id: hutIdForRef(curr.ohrsHutId),
+      title: prev ? `${prev.name} -> ${curr.name}` : `${t.tourName} Start -> ${curr.name}`,
+      info_url: null,
+    });
+  }
+}
+const stageRowsBase = stageRowsExtended.map((s) => ({
+  route_id: s.route_id,
+  day_index: s.day_index,
+  hut_id: s.hut_id,
+}));
+
+const availabilityRowsRaw = [];
+for (const doc of availabilityDocs) {
+  const ref = String(doc?.sourceHutRef ?? doc?.hutId ?? "").trim();
+  if (!ref) continue;
+  const hutId = hutIdForRef(ref);
+  const checkedAt = doc?.checkedAt ?? new Date().toISOString();
+  const days = Array.isArray(doc?.allDays) ? doc.allDays : [];
+  for (const day of days) {
+    const date = String(day?.date ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    availabilityRowsRaw.push({
+      hut_id: hutId,
+      date,
+      available_beds: parseBeds(day),
+      status: mapStatus(day),
+      confidence: "exact",
+      source: "hut-reservation",
+      checked_at: checkedAt,
+    });
+  }
+}
+const availabilityByKey = new Map();
+for (const row of availabilityRowsRaw) {
+  const key = `${row.hut_id}|${row.date}`;
+  const prev = availabilityByKey.get(key);
+  if (!prev) {
+    availabilityByKey.set(key, row);
+    continue;
+  }
+  const prevTs = Date.parse(prev.checked_at ?? "");
+  const nextTs = Date.parse(row.checked_at ?? "");
+  if (!Number.isFinite(prevTs) || (Number.isFinite(nextTs) && nextTs >= prevTs)) {
+    availabilityByKey.set(key, row);
+  }
+}
+const availabilityRows = [...availabilityByKey.values()];
+
+await upsertBatched("routes", routesRows, "id");
+const hutsSync = await upsertWithSchemaFallback({
+  table: "huts",
+  preferredRows: hutsRowsExtended,
+  fallbackRows: hutsRowsBase,
+  onConflict: "id",
+});
+
+const routeIds = routesRows.map((r) => r.id);
+if (routeIds.length > 0) {
+  await postgrest(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, "DELETE", "route_stages", {
+    query: {
+      route_id: `in.(${routeIds.map((id) => `"${id}"`).join(",")})`,
+    },
+  });
+}
+
+const stagesSync = await upsertWithSchemaFallback({
+  table: "route_stages",
+  preferredRows: stageRowsExtended,
+  fallbackRows: stageRowsBase,
+  onConflict: "route_id,day_index",
+});
+
+await upsertBatched("availability_daily", availabilityRows, "hut_id,date", 1000);
+
+await upsertBatched("scrape_runs", [
+  {
+    source: "hut-reservation",
+    run_id: String(RUN_ID),
+    status: "ok",
+    started_at: new Date().toISOString(),
+    finished_at: new Date().toISOString(),
+    error_summary: null,
+    metadata: {
+      source: "hut-reservation",
+      inputDir: outputDir,
+      fileCount: availabilityFiles.length,
+      routeCount: routesRows.length,
+      hutCount: hutsRowsExtended.length,
+      stageCount: stageRowsExtended.length,
+      availabilityRows: availabilityRows.length,
+      coverageFile,
+      hutsSchemaFallback: hutsSync.usedFallback,
+      stagesSchemaFallback: stagesSync.usedFallback,
+    },
+  },
+], "source,run_id");
+
+console.log(
+  JSON.stringify(
+    {
+      upserted: true,
+      routes: routesRows.length,
+      huts: hutsRowsExtended.length,
+      route_stages: stageRowsExtended.length,
+      availability_daily: availabilityRows.length,
+      coverageFile,
+      outputDir,
+      schemaFallback: {
+        huts: hutsSync.usedFallback,
+        route_stages: stagesSync.usedFallback,
+      },
+    },
+    null,
+    2
+  )
+);
