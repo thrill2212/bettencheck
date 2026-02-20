@@ -35,18 +35,6 @@ jobs:
           HUT_LIST_FILE: ./huts.from-coverage.json
           REQUEST_DELAY_SECONDS: "0.05"
 
-      - name: Normalize and upsert to Supabase
-        if: always()
-        run: |
-          node scripts/normalize-and-upsert.mjs \
-            --source hut-reservation \
-            --input-dir scrapers/hut-reservation/availability-results \
-            --run-id "${{ github.run_id }}" \
-            --scraper-outcome "${{ steps.scrape_hut_reservation.outcome }}"
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-
       - name: Upload availability results
         uses: actions/upload-artifact@v4
         if: always()
@@ -61,7 +49,7 @@ jobs:
           echo "✅ Hut availability check completed"
           echo "📁 Results have been saved as artifacts"
 
-          if [ -f scrapers/hut-reservation/availability-results/*.json ]; then
+          if compgen -G "scrapers/hut-reservation/availability-results/*.json" > /dev/null; then
             echo ""
             echo "Generated files:"
             ls -lh scrapers/hut-reservation/availability-results/
