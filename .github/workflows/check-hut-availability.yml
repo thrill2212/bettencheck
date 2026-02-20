@@ -31,8 +31,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          TOUR_COVERAGE_FILE: scrapers/hut-reservation/tour-id-coverage.json
-          HUT_LIST_FILE: scrapers/hut-reservation/huts.from-coverage.json
+          TOUR_COVERAGE_FILE: ./tour-id-coverage.json
+          HUT_LIST_FILE: ./huts.from-coverage.json
           REQUEST_DELAY_SECONDS: "0.05"
 
       - name: Normalize and upsert to Supabase
