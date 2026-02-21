@@ -5,8 +5,8 @@ Prüft die Verfügbarkeit von Hütten auf [huetten-holiday.com](https://www.huet
 ## Konfiguration
 
 **Geprüfte Hütten:**
-- Hütte 27 (Cabin ID: 27)
-- Hütte 24 (Cabin ID: 24)
+- Kemptner Hütte (Cabin ID: 27)
+- Memminger Hütte (Cabin ID: 24)
 
 **Saison:** Juni - Oktober (automatische Jahresauswahl)
 - Bei Datum nach 1. Oktober: Nächstes Jahr
@@ -33,7 +33,19 @@ Das Script erstellt JSON-Dateien im Verzeichnis `availability-results/`:
   "cabins": [
     {
       "id": 27,
-      "name": "Hütte 27",
+      "name": "Kemptner Hütte",
+      "metadata": {
+        "sources": ["api", "website"],
+        "slug": "kemptner-huette",
+        "detailPageUrl": "https://www.huetten-holiday.com/huts/kemptner-huette",
+        "websiteUrl": "https://www.kemptner-huette.de",
+        "region": "Allgäuer Alpen",
+        "country": "Deutschland",
+        "altitude": 1844,
+        "latitude": 47.313340234915444,
+        "longitude": 10.327922453689553,
+        "sleepingPlacesTotal": 182
+      },
       "availability": [
         {
           "date": "2026-06-05T00:00:00.000000Z",
@@ -53,6 +65,12 @@ Das Script erstellt JSON-Dateien im Verzeichnis `availability-results/`:
 - **cabins**: Array mit Hütten-Daten
   - **id**: Cabin ID
   - **name**: Hüttenname
+  - **metadata**: Hütten-Metadaten (API-first, Website-Fallback)
+    - **sources**: Welche Quellen genutzt wurden (`api`, `website`)
+    - **slug**, **detailPageUrl**, **websiteUrl**
+    - **region**, **country**
+    - **altitude**, **latitude**, **longitude**
+    - **sleepingPlacesTotal**, **rooms**, **facilities**, **seasons**
   - **availability**: Array mit Tagesverfügbarkeit
     - **date**: Datum (ISO 8601)
     - **totalPlaces**: Gesamtkapazität an diesem Tag
@@ -71,6 +89,7 @@ Das Script erstellt JSON-Dateien im Verzeichnis `availability-results/`:
 - `curl` - HTTP-Requests
 - `jq` - JSON-Verarbeitung
 - `grep`, `sed` - Text-Parsing
+- `node` - Parsing der eingebetteten Detailseiten-Metadaten
 
 Alle Tools sind auf GitHub Runners vorinstalliert.
 
@@ -101,6 +120,12 @@ Payload:
   "multipleCalendar": false
 }
 ```
+
+### Metadaten-Erhebung (API first, Website fallback)
+
+1. API-Call `POST /cabins/search` (mit CSRF + Session), um Basisdaten zu erhalten.
+2. Detailseite `/huts/{slug}` wird als Fallback/Ergänzung geparst (eingebettetes `:cabin="{...}"` JSON).
+3. Metadaten werden pro Hütte in `cabins[].metadata` gespeichert.
 
 ### Rate Limiting
 

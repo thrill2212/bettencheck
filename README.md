@@ -84,7 +84,7 @@ export SUPABASE_SERVICE_ROLE_KEY=...
 Prüft Hüttenverfügbarkeit auf huetten-holiday.com.
 
 - **Plattform:** [huetten-holiday.com](https://www.huetten-holiday.com)
-- **Hütten:** Hütte 27, Hütte 24
+- **Hütten:** Kemptner Hütte (27), Memminger Hütte (24)
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-huettenholiday-availability.yml`
 - **Dokumentation:** [scrapers/huettenholiday/README.md](scrapers/huettenholiday/README.md)
