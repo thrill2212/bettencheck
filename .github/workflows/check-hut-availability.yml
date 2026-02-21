@@ -53,6 +53,7 @@ jobs:
             echo "mode=full" >> "$GITHUB_OUTPUT"
             echo "shard=all" >> "$GITHUB_OUTPUT"
             echo "fetch_hut_info=true" >> "$GITHUB_OUTPUT"
+            echo "fetch_hut_info_mode=always" >> "$GITHUB_OUTPUT"
             echo "request_delay=0.20" >> "$GITHUB_OUTPUT"
             echo "max_retries=4" >> "$GITHUB_OUTPUT"
             echo "retry_delay=4" >> "$GITHUB_OUTPUT"
@@ -71,6 +72,7 @@ jobs:
             echo "mode=rotating" >> "$GITHUB_OUTPUT"
             echo "shard=$slot" >> "$GITHUB_OUTPUT"
             echo "fetch_hut_info=false" >> "$GITHUB_OUTPUT"
+            echo "fetch_hut_info_mode=missing-cache" >> "$GITHUB_OUTPUT"
             echo "request_delay=0.10" >> "$GITHUB_OUTPUT"
             echo "max_retries=2" >> "$GITHUB_OUTPUT"
             echo "retry_delay=2" >> "$GITHUB_OUTPUT"
@@ -89,6 +91,7 @@ jobs:
           TOUR_COVERAGE_FILE: ./tour-id-coverage.json
           HUT_LIST_FILE: ./huts.selected.json
           FETCH_HUT_INFO: ${{ steps.select_profile.outputs.fetch_hut_info }}
+          FETCH_HUT_INFO_MODE: ${{ steps.select_profile.outputs.fetch_hut_info_mode }}
           REQUEST_DELAY_SECONDS: ${{ steps.select_profile.outputs.request_delay }}
           MAX_RETRIES: ${{ steps.select_profile.outputs.max_retries }}
           RETRY_DELAY_SECONDS: ${{ steps.select_profile.outputs.retry_delay }}

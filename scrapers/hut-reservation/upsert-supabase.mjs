@@ -75,6 +75,16 @@ function parseBeds(day) {
   return hasValue ? Math.max(0, Math.round(sum)) : null;
 }
 
+function parseBedsTotal(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return Math.max(0, Math.round(raw));
+  const match = String(raw).match(/\d+/);
+  if (!match) return null;
+  const n = Number(match[0]);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.round(n));
+}
+
 function mapStatus(day) {
   const raw = String(day?.hutStatus ?? "").toUpperCase();
   if (raw === "CLOSED") return "closed";
@@ -255,6 +265,7 @@ for (const t of tours) {
     const bookingUrl =
       doc?.bookingUrl ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`;
     const altitude = parseElevation(doc?.hutInfo?.altitude);
+    const totalBeds = parseBedsTotal(doc?.hutInfo?.totalBedsInfo);
     hutsMap.set(hutId, {
       id: hutId,
       provider: "hut-reservation",
@@ -268,7 +279,7 @@ for (const t of tours) {
       phone: doc?.hutInfo?.phone ?? existing?.phone ?? null,
       email: existing?.email ?? null,
       warden_name: doc?.hutInfo?.hutWarden ?? existing?.warden_name ?? null,
-      sleeping_places_total: existing?.sleeping_places_total ?? null,
+      sleeping_places_total: totalBeds ?? existing?.sleeping_places_total ?? null,
       price_from_eur: existing?.price_from_eur ?? null,
       latitude: doc?.location?.latitude ?? existing?.latitude ?? null,
       longitude: doc?.location?.longitude ?? existing?.longitude ?? null,
@@ -283,6 +294,7 @@ for (const [ref, doc] of latestByHutRef.entries()) {
   const bookingUrl =
     doc?.bookingUrl ?? `https://www.hut-reservation.org/reservation/book-hut/${ref}/wizard`;
   const altitude = parseElevation(doc?.hutInfo?.altitude);
+  const totalBeds = parseBedsTotal(doc?.hutInfo?.totalBedsInfo);
   hutsMap.set(hutId, {
     id: hutId,
     provider: "hut-reservation",
@@ -296,7 +308,7 @@ for (const [ref, doc] of latestByHutRef.entries()) {
     phone: doc?.hutInfo?.phone ?? existing?.phone ?? null,
     email: existing?.email ?? null,
     warden_name: doc?.hutInfo?.hutWarden ?? existing?.warden_name ?? null,
-    sleeping_places_total: existing?.sleeping_places_total ?? null,
+    sleeping_places_total: totalBeds ?? existing?.sleeping_places_total ?? null,
     price_from_eur: existing?.price_from_eur ?? null,
     latitude: doc?.location?.latitude ?? existing?.latitude ?? null,
     longitude: doc?.location?.longitude ?? existing?.longitude ?? null,

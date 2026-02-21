@@ -20,6 +20,16 @@ BLOCK_COOLDOWN_SECONDS="${BLOCK_COOLDOWN_SECONDS:-45}"
 HUT_INFO_CACHE_DIR="${HUT_INFO_CACHE_DIR:-.cache/hut-info}"
 HUT_INFO_CACHE_TTL_HOURS="${HUT_INFO_CACHE_TTL_HOURS:-168}"
 FETCH_HUT_INFO="${FETCH_HUT_INFO:-true}"
+FETCH_HUT_INFO_MODE="${FETCH_HUT_INFO_MODE:-}"
+
+if [ -z "$FETCH_HUT_INFO_MODE" ]; then
+  if [ "$FETCH_HUT_INFO" = "true" ]; then
+    FETCH_HUT_INFO_MODE="always"
+  else
+    # Backward-compatible fast mode: keep API load low, but fetch once if cache is missing.
+    FETCH_HUT_INFO_MODE="missing-cache"
+  fi
+fi
 
 # Legacy fallback when no hut list is available
 LEGACY_HUT_IDS=(366 476)
@@ -191,7 +201,7 @@ for row in "${HUT_ROWS[@]}"; do
   hut_info_cache_file="${HUT_INFO_CACHE_DIR}/hut-${hut_id}.json"
   hut_info_ttl_seconds=$((HUT_INFO_CACHE_TTL_HOURS * 3600))
   hut_info_response=""
-  if [ -f "$hut_info_cache_file" ] && { [ "$FETCH_HUT_INFO" != "true" ] || cache_is_fresh "$hut_info_cache_file" "$hut_info_ttl_seconds"; }; then
+  if [ -f "$hut_info_cache_file" ] && { [ "$FETCH_HUT_INFO_MODE" != "always" ] || cache_is_fresh "$hut_info_cache_file" "$hut_info_ttl_seconds"; }; then
     if cached_json=$(cat "$hut_info_cache_file"); then
       if echo "$cached_json" | jq -e '.hutId? != null' >/dev/null 2>&1; then
         hut_info_response="$cached_json"
@@ -200,7 +210,17 @@ for row in "${HUT_ROWS[@]}"; do
     fi
   fi
 
-  if [ -z "$hut_info_response" ] && [ "$FETCH_HUT_INFO" = "true" ]; then
+  should_fetch_hut_info="false"
+  if [ -z "$hut_info_response" ]; then
+    case "$FETCH_HUT_INFO_MODE" in
+      always) should_fetch_hut_info="true" ;;
+      missing-cache) should_fetch_hut_info="true" ;;
+      never) should_fetch_hut_info="false" ;;
+      *) should_fetch_hut_info="false" ;;
+    esac
+  fi
+
+  if [ "$should_fetch_hut_info" = "true" ]; then
     hut_info_response=$(fetch_with_retries "${API_HUT_INFO_URL}/${hut_id}" false || true)
     if [ -n "$hut_info_response" ] && echo "$hut_info_response" | jq -e '.hutId? != null' >/dev/null 2>&1; then
       printf '%s' "$hut_info_response" > "$hut_info_cache_file"
@@ -214,8 +234,15 @@ for row in "${HUT_ROWS[@]}"; do
   fi
 
   location_json=$(echo "$hut_info_json" | jq '
-    (.coordinates // "") as $coords
-    | ($coords | split("/")) as $parts
+    ((.coordinates // "") | gsub("\\s+"; "")) as $coords
+    | (
+        if $coords == "" then []
+        elif ($coords | contains("/")) then ($coords | split("/"))
+        elif ($coords | contains(",")) then ($coords | split(","))
+        elif ($coords | contains(";")) then ($coords | split(";"))
+        else []
+        end
+      ) as $parts
     | {
         rawCoordinates: (if $coords == "" then null else $coords end),
         latitude: (if ($parts | length) == 2 then ($parts[0] | tonumber?) else null end),
@@ -251,7 +278,10 @@ for row in "${HUT_ROWS[@]}"; do
         hutInfo: {
           tenantCode: ($hutinfo.tenantCode // null),
           tenantCountry: ($hutinfo.tenantCountry // null),
+          hutUnlocked: ($hutinfo.hutUnlocked // null),
+          maxNumberOfNights: ($hutinfo.maxNumberOfNights // null),
           altitude: ($hutinfo.altitude // null),
+          totalBedsInfo: ($hutinfo.totalBedsInfo // null),
           hutWebsite: ($hutinfo.hutWebsite // null),
           hutWarden: ($hutinfo.hutWarden // null),
           phone: ($hutinfo.phone // null),
@@ -303,6 +333,7 @@ echo -e "${GREEN}Check completed!${NC}"
 echo "Results saved in: $OUTPUT_DIR/"
 echo "Hut info cache: ${cache_hit_count} hits / ${cache_miss_count} misses (TTL ${HUT_INFO_CACHE_TTL_HOURS}h)"
 echo "Hut info fetch enabled: ${FETCH_HUT_INFO}"
+echo "Hut info fetch mode: ${FETCH_HUT_INFO_MODE}"
 echo "=========================================="
 
 # Add artifacts info to summary
