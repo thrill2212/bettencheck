@@ -126,6 +126,8 @@ Payload:
 1. API-Call `POST /cabins/search` (mit CSRF + Session), um Basisdaten zu erhalten.
 2. Detailseite `/huts/{slug}` wird als Fallback/Ergänzung geparst (eingebettetes `:cabin="{...}"` JSON).
 3. Metadaten werden pro Hütte in `cabins[].metadata` gespeichert.
+4. Beim Workflow-Upsert werden diese Metadaten zusätzlich in die Tabelle `huts` geschrieben
+   (u. a. `sleeping_places_total`, `latitude`, `longitude`, `email`, `website_url`).
 
 ### Rate Limiting
 
