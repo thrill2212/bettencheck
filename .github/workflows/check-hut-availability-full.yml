@@ -22,6 +22,15 @@ jobs:
           node scrapers/hut-reservation/generate-huts-from-tour-coverage.mjs \
             --input scrapers/hut-reservation/tour-id-coverage.json \
             --output scrapers/hut-reservation/huts.from-coverage.json
+          jq '
+            . + [
+              {"hutId": 366, "hutName": "Braunschweiger Hütte"},
+              {"hutId": 476, "hutName": "Martin-Busch-Hütte"}
+            ]
+            | unique_by(.hutId)
+            | sort_by(.hutId)
+          ' scrapers/hut-reservation/huts.from-coverage.json > scrapers/hut-reservation/huts.from-coverage.with-legacy.json
+          mv scrapers/hut-reservation/huts.from-coverage.with-legacy.json scrapers/hut-reservation/huts.from-coverage.json
           echo "Generated hut list:"
           jq 'length' scrapers/hut-reservation/huts.from-coverage.json
 
@@ -46,4 +55,3 @@ jobs:
           name: hut-availability-full-results-${{ github.run_number }}
           path: scrapers/hut-reservation/availability-results/*.json
           retention-days: 30
-

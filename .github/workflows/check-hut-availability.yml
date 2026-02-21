@@ -40,6 +40,15 @@ jobs:
           node scrapers/hut-reservation/generate-huts-from-tour-coverage.mjs \
             --input scrapers/hut-reservation/tour-id-coverage.json \
             --output scrapers/hut-reservation/huts.from-coverage.json
+          jq '
+            . + [
+              {"hutId": 366, "hutName": "Braunschweiger Hütte"},
+              {"hutId": 476, "hutName": "Martin-Busch-Hütte"}
+            ]
+            | unique_by(.hutId)
+            | sort_by(.hutId)
+          ' scrapers/hut-reservation/huts.from-coverage.json > scrapers/hut-reservation/huts.from-coverage.with-legacy.json
+          mv scrapers/hut-reservation/huts.from-coverage.with-legacy.json scrapers/hut-reservation/huts.from-coverage.json
           echo "Generated hut list:"
           wc -l scrapers/hut-reservation/huts.from-coverage.json || true
 
