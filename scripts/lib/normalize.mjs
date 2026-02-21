@@ -46,12 +46,26 @@ export function normalizeHutReservationPayload(payload, mapping) {
       const date = toIsoDate(day.date);
       if (!date) return null;
       const closed = day.hutStatus === "CLOSED";
-      const freeBeds =
-        typeof day.freeBeds === "number" && Number.isFinite(day.freeBeds)
-          ? Math.max(0, day.freeBeds)
+      const directFreeBeds = Number(day.freeBeds);
+      const hasDirectFreeBeds = Number.isFinite(directFreeBeds);
+      const categoryList = Array.isArray(day.freeBedsPerCategory) ? day.freeBedsPerCategory : [];
+      const freeBedsFromCategories = categoryList.reduce((sum, category) => {
+        const n = Number(category?.totalFreePlaces ?? category?.freeBeds ?? category?.freePlaces);
+        return Number.isFinite(n) ? sum + n : sum;
+      }, 0);
+      const hasCategoryValues = categoryList.some((category) =>
+        Number.isFinite(Number(category?.totalFreePlaces ?? category?.freeBeds ?? category?.freePlaces))
+      );
+      const freeBeds = hasDirectFreeBeds
+        ? Math.max(0, Math.round(directFreeBeds))
+        : hasCategoryValues
+          ? Math.max(0, Math.round(freeBedsFromCategories))
           : null;
+      const percentage = String(day.percentage ?? "").toUpperCase();
       const status = closed
         ? "closed"
+        : percentage === "FULL"
+          ? "unavailable"
         : freeBeds !== null
           ? freeBeds > 0
             ? "available"

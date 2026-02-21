@@ -54,6 +54,49 @@ test("normalizeHutReservationPayload uses exact freeBeds when available", () => 
   assert.equal(rows[1].confidence, "exact");
 });
 
+test("normalizeHutReservationPayload sums freeBedsPerCategory when freeBeds is missing", () => {
+  const payload = {
+    hutId: 366,
+    checkedAt: "2026-02-09T20:00:00Z",
+    allDays: [
+      {
+        date: "2026-06-12T00:00:00.000Z",
+        hutStatus: "SERVICED",
+        freeBedsPerCategory: [
+          { totalFreePlaces: 2 },
+          { totalFreePlaces: 3 },
+        ],
+      },
+    ],
+  };
+
+  const rows = normalizeHutReservationPayload(payload, { "366": "braunschweiger-huette" });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].available_beds, 5);
+  assert.equal(rows[0].status, "available");
+  assert.equal(rows[0].confidence, "exact");
+});
+
+test("normalizeHutReservationPayload treats FULL percentage as unavailable", () => {
+  const payload = {
+    hutId: 366,
+    checkedAt: "2026-02-09T20:00:00Z",
+    allDays: [
+      {
+        date: "2026-06-13T00:00:00.000Z",
+        hutStatus: "SERVICED",
+        percentage: "FULL",
+      },
+    ],
+  };
+
+  const rows = normalizeHutReservationPayload(payload, { "366": "braunschweiger-huette" });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].available_beds, null);
+  assert.equal(rows[0].status, "unavailable");
+  assert.equal(rows[0].confidence, "inferred");
+});
+
 test("normalizeHuettenholidayPayload keeps exact bed counts", () => {
   const payload = {
     scrapedAt: "2026-02-09T20:00:00Z",

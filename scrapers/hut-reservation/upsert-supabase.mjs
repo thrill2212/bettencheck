@@ -58,21 +58,40 @@ function parseElevation(raw) {
 }
 
 function parseBeds(day) {
-  if (typeof day?.availableBeds === "number" && Number.isFinite(day.availableBeds)) {
-    return Math.max(0, Math.round(day.availableBeds));
-  }
-  const cats = Array.isArray(day?.bedCategoriesData) ? day.bedCategoriesData : [];
-  if (cats.length === 0) return null;
-  let sum = 0;
-  let hasValue = false;
-  for (const c of cats) {
-    const n = Number(c?.totalFreePlaces);
+  const directCandidates = [day?.availableBeds, day?.freeBeds];
+  for (const candidate of directCandidates) {
+    const n = Number(candidate);
     if (Number.isFinite(n)) {
-      sum += n;
-      hasValue = true;
+      return Math.max(0, Math.round(n));
     }
   }
-  return hasValue ? Math.max(0, Math.round(sum)) : null;
+
+  const categoryCollections = [
+    Array.isArray(day?.bedCategoriesData) ? day.bedCategoriesData : [],
+    Array.isArray(day?.freeBedsPerCategory) ? day.freeBedsPerCategory : [],
+  ];
+
+  for (const categories of categoryCollections) {
+    if (categories.length === 0) continue;
+    let sum = 0;
+    let hasValue = false;
+    for (const category of categories) {
+      const possibleFields = [category?.totalFreePlaces, category?.freeBeds, category?.freePlaces];
+      for (const field of possibleFields) {
+        const n = Number(field);
+        if (Number.isFinite(n)) {
+          sum += n;
+          hasValue = true;
+          break;
+        }
+      }
+    }
+    if (hasValue) {
+      return Math.max(0, Math.round(sum));
+    }
+  }
+
+  return null;
 }
 
 function parseBedsTotal(raw) {
@@ -87,7 +106,10 @@ function parseBedsTotal(raw) {
 
 function mapStatus(day) {
   const raw = String(day?.hutStatus ?? "").toUpperCase();
+  const percentage = String(day?.percentage ?? "").toUpperCase();
   if (raw === "CLOSED") return "closed";
+  if (percentage === "CLOSED") return "closed";
+  if (percentage === "FULL") return "unavailable";
   const pct = Number(day?.percentage);
   if (Number.isFinite(pct)) return pct > 0 ? "available" : "unavailable";
   if (raw.includes("UNAVAILABLE") || raw.includes("FULL")) return "unavailable";
