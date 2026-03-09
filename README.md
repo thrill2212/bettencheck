@@ -18,18 +18,23 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 │   │   ├── check-availability.sh
 │   │   ├── upsert-supabase.mjs
 │   │   ├── huts.json
+│   │   ├── huts.from-coverage.json
 │   │   ├── hut-id-name-map.json
 │   │   ├── tour-id-coverage.json
 │   │   ├── availability-results/
 │   │   └── README.md
 │   ├── huettenholiday/      # Hüttenbuchungen (huetten-holiday.com)
 │   │   ├── check-availability.sh
+│   │   ├── cabins.from-live-targets.json
 │   │   ├── availability-results/
 │   │   └── README.md
 │   └── casablanca/          # Berghütten (Casablanca System)
 │       ├── check-availability.sh
 │       ├── availability-results/
 │       └── README.md
+├── scripts/
+│   ├── build-live-target-lists.mjs
+│   └── normalize-and-upsert.mjs
 └── README.md
 ```
 
@@ -40,7 +45,7 @@ Sammlung von API-Scrapern zur automatischen Verfügbarkeitsprüfung verschiedene
 Prüft Hüttenverfügbarkeit auf hut-reservation.org.
 
 - **Plattform:** [hut-reservation.org](https://www.hut-reservation.org)
-- **Hütten:** aus `tour-id-coverage.json` (empfohlen) oder `huts.json`
+- **Hütten:** aus `huts.from-coverage.json` (aus Live-Routen in Supabase generiert)
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-hut-availability.yml`
 - **Full-Refresh:** Täglich über `.github/workflows/check-hut-availability-full.yml`
@@ -55,11 +60,11 @@ Prüft Hüttenverfügbarkeit auf hut-reservation.org.
 #### Empfohlener produktiver Flow
 
 ```bash
-cd scrapers/hut-reservation
+node scripts/build-live-target-lists.mjs \
+  --hut-output scrapers/hut-reservation/huts.from-coverage.json \
+  --huettenholiday-output scrapers/huettenholiday/cabins.from-live-targets.json
 
-node generate-huts-from-tour-coverage.mjs \
-  --input ./tour-id-coverage.json \
-  --output ./huts.from-coverage.json
+cd scrapers/hut-reservation
 
 HUT_LIST_FILE=./huts.from-coverage.json \
 FETCH_HUT_INFO=false \
@@ -84,10 +89,11 @@ export SUPABASE_SERVICE_ROLE_KEY=...
 Prüft Hüttenverfügbarkeit auf huetten-holiday.com.
 
 - **Plattform:** [huetten-holiday.com](https://www.huetten-holiday.com)
-- **Hütten:** Kemptner Hütte (27), Memminger Hütte (24)
+- **Hütten:** aus `cabins.from-live-targets.json` (aus Live-Routen in Supabase generiert)
 - **Intervall:** Alle 3 Stunden
 - **Workflow:** `.github/workflows/check-huettenholiday-availability.yml`
 - **Dokumentation:** [scrapers/huettenholiday/README.md](scrapers/huettenholiday/README.md)
+- **Fallback:** Falls keine Liste verfügbar ist, nutzt der Scraper Default-Cabins (24/27)
 
 ### 3. Casablanca (`scrapers/casablanca/`)
 
@@ -193,7 +199,7 @@ Alle Scraper laufen automatisch als GitHub Actions:
 - **Manual Trigger:** "Run workflow" Button für sofortige Ausführung
 - **Hut-Reservation-Strategie:** 3h Rotations-Run (günstig/schnell) + täglicher Full-Refresh
 
-### Relevante Secrets für Live-Sync
+### Relevante Secrets
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -216,10 +222,11 @@ Für spezielle Dependencies, siehe den jeweiligen Scraper.
 
 ## Live-Daten in Website bringen (Kurzcheckliste)
 
-1. Scraper in `scrapers/hut-reservation` mit Tour-Coverage laufen lassen.
-2. Prüfen, dass `upsert-supabase.mjs` am Ende `upserted: true` ausgibt.
-3. In der Website (`huettentouren_org`) `npm run check:live-routes` ausführen.
-4. Erwartung: keine `missingHutIds`, alle Zielrouten `isReady: true`.
+1. Ziel-Hüttenlisten aus Supabase bauen (`scripts/build-live-target-lists.mjs`).
+2. Scraper ausführen (`hut-reservation` und `huettenholiday`) mit den erzeugten Listen.
+3. Prüfen, dass `normalize-and-upsert.mjs` erfolgreich in `availability_daily` schreibt.
+4. In der Website (`huettentouren_org`) `npm run check:live-routes` ausführen.
+5. Erwartung: pro Route `coverageReady: true` und `freshnessOk: true` (zusätzlich bleibt `isReady: true` als kombinierter Status).
 
 ## Beispiele für weitere Scraper
 

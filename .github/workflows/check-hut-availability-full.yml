@@ -17,22 +17,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build hut list from route coverage
+      - name: Build hut list from live published routes
         run: |
-          node scrapers/hut-reservation/generate-huts-from-tour-coverage.mjs \
-            --input scrapers/hut-reservation/tour-id-coverage.json \
-            --output scrapers/hut-reservation/huts.from-coverage.json
-          jq '
-            . + [
-              {"hutId": 366, "hutName": "Braunschweiger Hütte"},
-              {"hutId": 476, "hutName": "Martin-Busch-Hütte"}
-            ]
-            | unique_by(.hutId)
-            | sort_by(.hutId)
-          ' scrapers/hut-reservation/huts.from-coverage.json > scrapers/hut-reservation/huts.from-coverage.with-legacy.json
-          mv scrapers/hut-reservation/huts.from-coverage.with-legacy.json scrapers/hut-reservation/huts.from-coverage.json
+          set -euo pipefail
+          node scripts/build-live-target-lists.mjs \
+            --hut-output scrapers/hut-reservation/huts.from-coverage.json \
+            --huettenholiday-output /tmp/cabins.from-live-targets.json
           echo "Generated hut list:"
           jq 'length' scrapers/hut-reservation/huts.from-coverage.json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Check hut availability (full)
         run: bash scrapers/hut-reservation/check-availability.sh

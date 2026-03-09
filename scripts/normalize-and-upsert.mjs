@@ -82,6 +82,23 @@ async function getJson(url, headers) {
   return response.json();
 }
 
+async function loadProviderMappingFromSupabase({
+  supabaseUrl,
+  serviceRoleKey,
+  provider,
+}) {
+  const url = `${supabaseUrl}/rest/v1/huts?select=id,provider_ref&provider=eq.${encodeURIComponent(provider)}&provider_ref=not.is.null&limit=10000`;
+  const rows = await getJson(url, toRestHeaders(serviceRoleKey));
+  const mapping = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = String(row?.provider_ref ?? "").trim();
+    const value = String(row?.id ?? "").trim();
+    if (!key || !value) continue;
+    mapping[key] = value;
+  }
+  return mapping;
+}
+
 async function upsertBatched(url, headers, rows, batchSize = 500) {
   if (rows.length === 0) return;
   for (let i = 0; i < rows.length; i += batchSize) {
@@ -241,6 +258,16 @@ async function main() {
     throw new Error(`Missing mapping file: ${mappingPath}`);
   }
   const mapping = loadProviderMapping(mappingPath);
+  const dynamicProviderMap = await loadProviderMappingFromSupabase({
+    supabaseUrl,
+    serviceRoleKey,
+    provider: source,
+  });
+  if (!mapping[source]) mapping[source] = {};
+  mapping[source] = {
+    ...(mapping[source] ?? {}),
+    ...dynamicProviderMap,
+  };
 
   const filePaths = listJsonFiles(path.resolve(process.cwd(), inputDir));
 

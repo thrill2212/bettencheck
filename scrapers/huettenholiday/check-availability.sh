@@ -7,10 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Configuration
-CABINS=(27 24)
-CABIN_NAMES=("Kemptner Hütte" "Memminger Hütte")
-CABIN_SLUGS=("kemptner-huette" "memminger-huette")
-CABIN_SEARCH_TERMS=("kemptner" "memminger")
+CABIN_LIST_FILE="${CABIN_LIST_FILE:-cabins.from-live-targets.json}"
+DEFAULT_CABINS=(27 24)
+DEFAULT_CABIN_NAMES=("Kemptner Hütte" "Memminger Hütte")
+DEFAULT_CABIN_SLUGS=("kemptner-huette" "memminger-huette")
+DEFAULT_CABIN_SEARCH_TERMS=("kemptner" "memminger")
 OUTPUT_DIR="availability-results"
 BASE_URL="https://www.huetten-holiday.com"
 IMAGE_BASE_URL="https://huetten-holiday.fra1.digitaloceanspaces.com/images"
@@ -43,6 +44,21 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+load_cabin_rows() {
+    if [ -f "$CABIN_LIST_FILE" ] && jq -e 'type == "array" and length > 0' "$CABIN_LIST_FILE" >/dev/null 2>&1; then
+        jq -r '.[] | [(.cabinId|tostring), (.cabinName // ("Cabin " + (.cabinId|tostring))), (.cabinSlug // ("cabin-" + (.cabinId|tostring))), (.cabinSearchTerm // (.cabinName // ""))] | @tsv' "$CABIN_LIST_FILE"
+        return 0
+    fi
+
+    for i in "${!DEFAULT_CABINS[@]}"; do
+        printf '%s\t%s\t%s\t%s\n' \
+            "${DEFAULT_CABINS[$i]}" \
+            "${DEFAULT_CABIN_NAMES[$i]}" \
+            "${DEFAULT_CABIN_SLUGS[$i]}" \
+            "${DEFAULT_CABIN_SEARCH_TERMS[$i]}"
+    done
 }
 
 # Initialize session and get CSRF token
@@ -542,13 +558,23 @@ main() {
     year=$(get_season_info)
     log_info "Scraping season: $year"
 
+    # Load cabin rows from live-target file or fallback defaults.
+    # Avoid `mapfile` for Bash 3 compatibility on macOS.
+    CABIN_ROWS=()
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        CABIN_ROWS+=("$line")
+    done < <(load_cabin_rows)
+    if [ "${#CABIN_ROWS[@]}" -eq 0 ]; then
+        log_error "No cabins configured for scraping."
+        exit 1
+    fi
+    log_info "Cabins configured: ${#CABIN_ROWS[@]} (source: $CABIN_LIST_FILE or defaults)"
+
     # Scrape all cabins
     local cabins_json="[]"
-    for i in "${!CABINS[@]}"; do
-        local cabin_id="${CABINS[$i]}"
-        local cabin_name="${CABIN_NAMES[$i]}"
-        local cabin_slug="${CABIN_SLUGS[$i]}"
-        local cabin_search_term="${CABIN_SEARCH_TERMS[$i]}"
+    for row in "${CABIN_ROWS[@]}"; do
+        IFS=$'\t' read -r cabin_id cabin_name cabin_slug cabin_search_term <<< "$row"
 
         local cabin_data
         local cabin_file="$TEMP_DIR/cabin_${cabin_id}.json"
@@ -604,7 +630,7 @@ main() {
     echo -e "${GREEN}✓ Scraping completed successfully${NC}"
     echo "=========================================="
     echo "Output: $output_file"
-    echo "Cabins scraped: ${#CABINS[@]}"
+    echo "Cabins scraped: ${#CABIN_ROWS[@]}"
     echo "Total days: $(jq '[.cabins[].availability | length] | add' "$output_file")"
     echo "=========================================="
 }

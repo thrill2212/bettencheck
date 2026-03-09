@@ -16,10 +16,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Build Hüttenholiday cabin list from live published routes
+        run: |
+          set -euo pipefail
+          node scripts/build-live-target-lists.mjs \
+            --hut-output /tmp/huts.from-live-targets.json \
+            --huettenholiday-output scrapers/huettenholiday/cabins.from-live-targets.json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
       - name: Check Hüttenholiday availability
         id: scrape_huettenholiday
         run: bash scrapers/huettenholiday/check-availability.sh
         working-directory: ${{ github.workspace }}
+        env:
+          CABIN_LIST_FILE: ./cabins.from-live-targets.json
 
       - name: Normalize and upsert to Supabase
         if: always()
