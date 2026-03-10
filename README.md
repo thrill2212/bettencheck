@@ -54,6 +54,8 @@ Prüft Hüttenverfügbarkeit auf hut-reservation.org.
 - **Optimierungen:**
   - 3h-Workflow nutzt rotierende 2-Shards (jede Hütte alle 6h) zur Entlastung der API
   - Robustes Retry/Backoff bei `403/429` (WAF-Block)
+  - Automatischer Repair-Pass für fehlgeschlagene Hütten im selben Workflow
+  - Harte Quality-Gates: verbleibende failed huts und Freshness-Verstöße lassen den Run fehlschlagen
   - `hutInfo`-Cache mit TTL (weniger API-Requests)
   - Supabase-Upsert verarbeitet nur die neueste Datei je Hütte (schneller bei großem History-Ordner)
 
@@ -83,6 +85,10 @@ Für Live-Sync zusätzlich:
 export SUPABASE_URL=...
 export SUPABASE_SERVICE_ROLE_KEY=...
 ```
+
+Der Hut-Reservation-Scraper schreibt pro Lauf zusätzlich:
+- `availability-results/scrape-summary*.json` (attempted/success/failed counts + IDs)
+- `availability-results/failed-huts*.json` (Input für Repair-Pass)
 
 ### 2. Hüttenholiday (`scrapers/huettenholiday/`)
 

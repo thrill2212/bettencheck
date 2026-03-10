@@ -85,8 +85,8 @@ jobs:
           echo "Selected huts:"
           jq 'length' scrapers/hut-reservation/huts.selected.json
 
-      - name: Check hut availability
-        id: scrape_hut_reservation
+      - name: Check hut availability (first pass)
+        id: scrape_hut_reservation_first
         run: bash scrapers/hut-reservation/check-availability.sh
         working-directory: ${{ github.workspace }}
         env:
@@ -100,10 +100,103 @@ jobs:
           MAX_RETRIES: ${{ steps.select_profile.outputs.max_retries }}
           RETRY_DELAY_SECONDS: ${{ steps.select_profile.outputs.retry_delay }}
           BLOCK_COOLDOWN_SECONDS: ${{ steps.select_profile.outputs.block_cooldown }}
+          FAILED_HUTS_FILE: ./availability-results/failed-huts.first-pass.json
+          SCRAPE_SUMMARY_FILE: ./availability-results/scrape-summary.first-pass.json
+          FAIL_ON_HUT_ERRORS: "false"
+          BETTENCHECK_RUN_ID: "${{ github.run_id }}-first"
+
+      - name: Repair failed huts (second pass)
+        id: scrape_hut_reservation_repair
+        if: always()
+        run: |
+          set -euo pipefail
+          SUMMARY_FILE="scrapers/hut-reservation/availability-results/scrape-summary.first-pass.json"
+          REPAIR_SUMMARY_FILE="scrapers/hut-reservation/availability-results/scrape-summary.repair-pass.json"
+
+          if [ ! -f "$SUMMARY_FILE" ]; then
+            echo "repair_attempted=false" >> "$GITHUB_OUTPUT"
+            echo "remaining_failed=-1" >> "$GITHUB_OUTPUT"
+            echo "First-pass summary missing."
+            exit 0
+          fi
+
+          first_failed=$(jq '.failedCount // 0' "$SUMMARY_FILE")
+          echo "first_failed=$first_failed" >> "$GITHUB_OUTPUT"
+          if [ "$first_failed" -eq 0 ]; then
+            echo "repair_attempted=false" >> "$GITHUB_OUTPUT"
+            echo "remaining_failed=0" >> "$GITHUB_OUTPUT"
+            echo "No failed huts in first pass."
+            exit 0
+          fi
+
+          echo "repair_attempted=true" >> "$GITHUB_OUTPUT"
+          echo "Running repair pass for ${first_failed} huts..."
+          bash scrapers/hut-reservation/check-availability.sh
+
+          if [ ! -f "$REPAIR_SUMMARY_FILE" ]; then
+            echo "remaining_failed=$first_failed" >> "$GITHUB_OUTPUT"
+            echo "Repair summary missing."
+            exit 0
+          fi
+
+          repair_failed=$(jq '.failedCount // 0' "$REPAIR_SUMMARY_FILE")
+          echo "remaining_failed=$repair_failed" >> "$GITHUB_OUTPUT"
+          echo "Repair pass remaining failed huts: $repair_failed"
+        working-directory: ${{ github.workspace }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TOUR_COVERAGE_FILE: ./tour-id-coverage.json
+          HUT_LIST_FILE: ./availability-results/failed-huts.first-pass.json
+          FETCH_HUT_INFO: "false"
+          FETCH_HUT_INFO_MODE: "missing-cache"
+          REQUEST_DELAY_SECONDS: "0.20"
+          MAX_RETRIES: "4"
+          RETRY_DELAY_SECONDS: "4"
+          BLOCK_COOLDOWN_SECONDS: "20"
+          FAILED_HUTS_FILE: ./availability-results/failed-huts.repair-pass.json
+          SCRAPE_SUMMARY_FILE: ./availability-results/scrape-summary.repair-pass.json
+          FAIL_ON_HUT_ERRORS: "false"
+          BETTENCHECK_RUN_ID: "${{ github.run_id }}-repair"
+
+      - name: Enforce hut scrape quality gate
+        if: always()
+        run: |
+          set -euo pipefail
+          FIRST_SUMMARY="scrapers/hut-reservation/availability-results/scrape-summary.first-pass.json"
+          REPAIR_SUMMARY="scrapers/hut-reservation/availability-results/scrape-summary.repair-pass.json"
+
+          if [ ! -f "$FIRST_SUMMARY" ]; then
+            echo "First-pass summary missing."
+            exit 1
+          fi
+
+          first_failed=$(jq '.failedCount // 0' "$FIRST_SUMMARY")
+          remaining_failed="$first_failed"
+          if [ "$first_failed" -gt 0 ] && [ -f "$REPAIR_SUMMARY" ]; then
+            remaining_failed=$(jq '.failedCount // 0' "$REPAIR_SUMMARY")
+          fi
+
+          echo "first_failed=$first_failed"
+          echo "remaining_failed=$remaining_failed"
+
+          if [ "$remaining_failed" -gt 0 ]; then
+            echo "Quality gate failed: failed huts remain after repair pass."
+            exit 1
+          fi
+
+      - name: Enforce hut-reservation freshness gate
+        if: always()
+        run: node scripts/check-live-readiness-gate.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          LIVE_READINESS_MAX_STALENESS_HOURS: "8"
+          READINESS_PROVIDER_SCOPE: "hut-reservation"
 
       - name: Upload availability results
         uses: actions/upload-artifact@v4
-        if: failure() || github.event_name == 'workflow_dispatch'
+        if: always()
         with:
           name: hut-availability-results-${{ github.run_number }}-${{ steps.select_profile.outputs.mode }}-${{ steps.select_profile.outputs.shard }}
           path: scrapers/hut-reservation/availability-results/*.json

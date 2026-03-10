@@ -13,7 +13,13 @@ const coverageFile = process.env.TOUR_COVERAGE_FILE
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const RUN_ID = process.env.GITHUB_RUN_ID ?? `local-${new Date().toISOString()}`;
+const RUN_ID =
+  process.env.BETTENCHECK_RUN_ID ??
+  process.env.GITHUB_RUN_ID ??
+  `local-${new Date().toISOString()}`;
+const SCRAPE_SUMMARY_FILE = process.env.SCRAPE_SUMMARY_FILE
+  ? path.resolve(process.cwd(), process.env.SCRAPE_SUMMARY_FILE)
+  : path.join(outputDir, "scrape-summary.json");
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   console.log(
@@ -408,6 +414,15 @@ for (const row of availabilityRowsRaw) {
 }
 const availabilityRows = [...availabilityByKey.values()];
 
+let scrapeSummary = null;
+if (fs.existsSync(SCRAPE_SUMMARY_FILE)) {
+  try {
+    scrapeSummary = JSON.parse(fs.readFileSync(SCRAPE_SUMMARY_FILE, "utf8"));
+  } catch {
+    scrapeSummary = null;
+  }
+}
+
 await upsertBatched("routes", routesRows, "id");
 const hutsSync = await upsertWithSchemaFallback({
   table: "huts",
@@ -447,6 +462,15 @@ await upsertBatched("scrape_runs", [
       inputDir: outputDir,
       fileCount: availabilityFiles.length,
       selectedFileCount: availabilityDocs.length,
+      scrapeSummaryFile: SCRAPE_SUMMARY_FILE,
+      attemptedHutCount: scrapeSummary?.attemptedCount ?? null,
+      successfulHutCount: scrapeSummary?.successCount ?? null,
+      failedHutCount: scrapeSummary?.failedCount ?? null,
+      failedHutIds: Array.isArray(scrapeSummary?.failedHuts)
+        ? scrapeSummary.failedHuts
+            .map((hut) => String(hut?.hutId ?? "").trim())
+            .filter(Boolean)
+        : [],
       routeCount: routesRows.length,
       hutCount: hutsRowsExtended.length,
       stageCount: stageRowsExtended.length,

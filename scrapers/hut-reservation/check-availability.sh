@@ -11,6 +11,9 @@ API_AVAILABILITY_URL="https://www.hut-reservation.org/api/v1/reservation/getHutA
 API_HUT_INFO_URL="https://www.hut-reservation.org/api/v1/reservation/hutInfo"
 OUTPUT_DIR="availability-results"
 HUT_LIST_FILE="${HUT_LIST_FILE:-huts.json}"
+FAILED_HUTS_FILE="${FAILED_HUTS_FILE:-$OUTPUT_DIR/failed-huts.json}"
+SCRAPE_SUMMARY_FILE="${SCRAPE_SUMMARY_FILE:-$OUTPUT_DIR/scrape-summary.json}"
+FAIL_ON_HUT_ERRORS="${FAIL_ON_HUT_ERRORS:-false}"
 REQUEST_DELAY_SECONDS="${REQUEST_DELAY_SECONDS:-1.25}"
 USER_AGENT="${USER_AGENT:-Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36}"
 COOKIE_JAR="${COOKIE_JAR:-.cookies.txt}"
@@ -47,6 +50,29 @@ mkdir -p "$HUT_INFO_CACHE_DIR"
 
 cache_hit_count=0
 cache_miss_count=0
+attempted_count=0
+success_count=0
+failed_count=0
+
+attempted_tsv="$(mktemp)"
+success_tsv="$(mktemp)"
+failed_tsv="$(mktemp)"
+
+tsv_to_hut_json() {
+  local input_file="$1"
+  if [ -s "$input_file" ]; then
+    jq -R -s '
+      split("\n")
+      | map(select(length > 0) | split("\t"))
+      | map({
+          hutId: (.[0] | tonumber),
+          hutName: (.[1] // ("hut-" + .[0]))
+        })
+    ' "$input_file"
+  else
+    echo "[]"
+  fi
+}
 
 get_file_mtime_epoch() {
   local file="$1"
@@ -183,6 +209,8 @@ echo "|----------|--------|------------|----------------|-------------|" >> "$su
 for row in "${HUT_ROWS[@]}"; do
   hut_id="${row%%$'\t'*}"
   hut_name="${row#*$'\t'}"
+  attempted_count=$((attempted_count + 1))
+  printf '%s\t%s\n' "$hut_id" "$hut_name" >> "$attempted_tsv"
 
   hut_name_slug=$(echo "$hut_name" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
   if [ -z "$hut_name_slug" ]; then
@@ -194,8 +222,12 @@ for row in "${HUT_ROWS[@]}"; do
   # Fetch availability with retries/backoff (WAF may temporarily block rapid request bursts)
   if ! availability_response=$(fetch_with_retries "${API_AVAILABILITY_URL}?hutId=${hut_id}&step=WIZARD" true); then
     echo -e "${YELLOW}Warning: Availability request failed for $hut_name (ID: $hut_id) after ${MAX_RETRIES} attempts${NC}"
+    failed_count=$((failed_count + 1))
+    printf '%s\t%s\n' "$hut_id" "$hut_name" >> "$failed_tsv"
     continue
   fi
+  success_count=$((success_count + 1))
+  printf '%s\t%s\n' "$hut_id" "$hut_name" >> "$success_tsv"
 
   # Fetch hut info to enrich metadata/location
   hut_info_cache_file="${HUT_INFO_CACHE_DIR}/hut-${hut_id}.json"
@@ -328,12 +360,46 @@ for row in "${HUT_ROWS[@]}"; do
   sleep "$REQUEST_DELAY_SECONDS"
 done
 
+attempted_json="$(tsv_to_hut_json "$attempted_tsv")"
+success_json="$(tsv_to_hut_json "$success_tsv")"
+failed_json="$(tsv_to_hut_json "$failed_tsv")"
+printf '%s\n' "$failed_json" > "$FAILED_HUTS_FILE"
+
+jq -n \
+  --arg timestamp "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+  --arg mode "$FETCH_HUT_INFO_MODE" \
+  --arg source_file "$HUT_LIST_FILE" \
+  --arg failed_file "$FAILED_HUTS_FILE" \
+  --argjson attempted "$attempted_json" \
+  --argjson success "$success_json" \
+  --argjson failed "$failed_json" \
+  --argjson attempted_count "$attempted_count" \
+  --argjson success_count "$success_count" \
+  --argjson failed_count "$failed_count" \
+  '{
+    generatedAt: $timestamp,
+    sourceHutListFile: $source_file,
+    failedHutsFile: $failed_file,
+    fetchHutInfoMode: $mode,
+    attemptedCount: $attempted_count,
+    successCount: $success_count,
+    failedCount: $failed_count,
+    attemptedHuts: $attempted,
+    successHuts: $success,
+    failedHuts: $failed
+  }' > "$SCRAPE_SUMMARY_FILE"
+
 echo "=========================================="
 echo -e "${GREEN}Check completed!${NC}"
 echo "Results saved in: $OUTPUT_DIR/"
 echo "Hut info cache: ${cache_hit_count} hits / ${cache_miss_count} misses (TTL ${HUT_INFO_CACHE_TTL_HOURS}h)"
 echo "Hut info fetch enabled: ${FETCH_HUT_INFO}"
 echo "Hut info fetch mode: ${FETCH_HUT_INFO_MODE}"
+echo "Attempted huts: ${attempted_count}"
+echo "Successful huts: ${success_count}"
+echo "Failed huts: ${failed_count}"
+echo "Failed hut list: ${FAILED_HUTS_FILE}"
+echo "Scrape summary: ${SCRAPE_SUMMARY_FILE}"
 echo "=========================================="
 
 # Add artifacts info to summary
@@ -346,6 +412,9 @@ echo "- Season-filtered availability days" >> "$summary_file"
 echo "- Availability counts" >> "$summary_file"
 echo "- Hut metadata and location (if available via API)" >> "$summary_file"
 echo "- Hut info cache usage: ${cache_hit_count} hits / ${cache_miss_count} misses" >> "$summary_file"
+echo "- Attempted huts: ${attempted_count}" >> "$summary_file"
+echo "- Successful huts: ${success_count}" >> "$summary_file"
+echo "- Failed huts: ${failed_count}" >> "$summary_file"
 
 # Optional: Sync results to Supabase when credentials are provided.
 if [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
@@ -360,4 +429,10 @@ if [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
 else
   echo ""
   echo "Supabase sync skipped (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set)."
+fi
+
+if [ "$FAIL_ON_HUT_ERRORS" = "true" ] && [ "$failed_count" -gt 0 ]; then
+  echo ""
+  echo -e "${YELLOW}Failing run because FAIL_ON_HUT_ERRORS=true and failed_count=${failed_count}${NC}"
+  exit 1
 fi
