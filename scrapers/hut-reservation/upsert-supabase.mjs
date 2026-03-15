@@ -280,6 +280,12 @@ const routesRows = tours.map((t) => ({
   season_end: seasonEnd,
   is_active: true,
 }));
+const routesRowsBase = routesRows.map((route) => ({
+  id: route.id,
+  name: route.name,
+  duration_days: route.duration_days,
+  is_active: route.is_active,
+}));
 
 const hutsMap = new Map();
 for (const t of tours) {
@@ -423,7 +429,12 @@ if (fs.existsSync(SCRAPE_SUMMARY_FILE)) {
   }
 }
 
-await upsertBatched("routes", routesRows, "id");
+const routesSync = await upsertWithSchemaFallback({
+  table: "routes",
+  preferredRows: routesRows,
+  fallbackRows: routesRowsBase,
+  onConflict: "id",
+});
 const hutsSync = await upsertWithSchemaFallback({
   table: "huts",
   preferredRows: hutsRowsExtended,
@@ -476,6 +487,7 @@ await upsertBatched("scrape_runs", [
       stageCount: stageRowsExtended.length,
       availabilityRows: availabilityRows.length,
       coverageFile,
+      routesSchemaFallback: routesSync.usedFallback,
       hutsSchemaFallback: hutsSync.usedFallback,
       stagesSchemaFallback: stagesSync.usedFallback,
     },
@@ -493,6 +505,7 @@ console.log(
       coverageFile,
       outputDir,
       schemaFallback: {
+        routes: routesSync.usedFallback,
         huts: hutsSync.usedFallback,
         route_stages: stagesSync.usedFallback,
       },
