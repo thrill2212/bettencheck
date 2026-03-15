@@ -5,6 +5,8 @@ summary.md
 **/.cache/
 **/.cookies.txt
 **/huts.from-coverage.json
+**/*.missing-live-targets.json
+**/*.stale-*.json
 
 # OS files
 .DS_Store

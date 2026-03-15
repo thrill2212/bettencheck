@@ -363,7 +363,7 @@ for (const t of tours) {
     stageRowsExtended.push({
       route_id: t.routeId,
       day_index: i + 1,
-      hut_id: hutIdForRef(curr.ohrsHutId),
+      overnight_hut_id: hutIdForRef(curr.ohrsHutId),
       start_hut_id: prev ? hutIdForRef(prev.ohrsHutId) : null,
       end_hut_id: hutIdForRef(curr.ohrsHutId),
       title: prev ? `${prev.name} -> ${curr.name}` : `${t.tourName} Start -> ${curr.name}`,
@@ -374,7 +374,7 @@ for (const t of tours) {
 const stageRowsBase = stageRowsExtended.map((s) => ({
   route_id: s.route_id,
   day_index: s.day_index,
-  hut_id: s.hut_id,
+  overnight_hut_id: s.overnight_hut_id,
 }));
 
 const availabilityRowsRaw = [];

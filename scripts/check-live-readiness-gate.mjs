@@ -37,6 +37,10 @@ function isAvailabilityRequiredProvider(provider) {
   return !normalized.includes("fallback");
 }
 
+function getStageAvailabilityHutId(stage) {
+  return String(stage?.overnight_hut_id ?? "").trim();
+}
+
 function parseProviderScope() {
   const raw = String(process.env.READINESS_PROVIDER_SCOPE ?? "").trim();
   if (!raw) return null;
@@ -94,7 +98,10 @@ async function main() {
 
   const quotedRouteIds = routeIds.map((id) => `"${id}"`).join(",");
   const stagesParams = new URLSearchParams();
-  stagesParams.set("select", "route_id,hut_id,huts!route_stages_hut_id_fkey(provider)");
+  stagesParams.set(
+    "select",
+    "route_id,overnight_hut_id,huts!route_stages_overnight_hut_id_fkey(provider)"
+  );
   stagesParams.set("route_id", `in.(${quotedRouteIds})`);
   const stages = await getJson(`${supabaseUrl}/rest/v1/route_stages?${stagesParams.toString()}`, headers);
 
@@ -104,7 +111,7 @@ async function main() {
     if (!isAvailabilityRequiredProvider(provider)) continue;
     if (providerScope && !providerScope.has(provider)) continue;
     const routeId = stage.route_id;
-    const hutId = stage.hut_id;
+    const hutId = getStageAvailabilityHutId(stage);
     if (!routeId || !hutId) continue;
     if (!routeRequiredHuts.has(routeId)) routeRequiredHuts.set(routeId, new Set());
     routeRequiredHuts.get(routeId).add(hutId);

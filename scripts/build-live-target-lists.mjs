@@ -53,6 +53,10 @@ function isAvailabilityRequiredProvider(provider) {
   return !normalized.includes("fallback");
 }
 
+function getStageAvailabilityHutId(stage) {
+  return toSafeString(stage?.overnight_hut_id);
+}
+
 function parseExplicitRouteIds(value) {
   if (!value) return [];
   return [...new Set(String(value).split(",").map((v) => v.trim()).filter(Boolean))];
@@ -120,13 +124,13 @@ async function main() {
   if (routeIds.length > 0) {
     const quoted = routeIds.map((id) => `"${id}"`).join(",");
     const params = new URLSearchParams();
-    params.set("select", "route_id,day_index,hut_id");
+    params.set("select", "route_id,day_index,overnight_hut_id");
     params.set("route_id", `in.(${quoted})`);
     params.set("order", "route_id.asc,day_index.asc");
     stages = await getJson(`${restBase}/route_stages?${params.toString()}`, headers);
   }
 
-  const hutIds = [...new Set(stages.map((row) => row.hut_id).filter(Boolean))];
+  const hutIds = [...new Set(stages.map((row) => getStageAvailabilityHutId(row)).filter(Boolean))];
   const hutsById = new Map();
   if (hutIds.length > 0) {
     const quoted = hutIds.map((id) => `"${id}"`).join(",");
@@ -142,13 +146,14 @@ async function main() {
   const ignored = new Set();
 
   for (const stage of stages) {
-    const hut = hutsById.get(stage.hut_id);
+    const hutId = getStageAvailabilityHutId(stage);
+    const hut = hutsById.get(hutId);
     if (!hut) continue;
 
     const provider = toSafeString(hut.provider).toLowerCase();
     const providerRef = toSafeString(hut.provider_ref);
     if (!provider || !providerRef || !isAvailabilityRequiredProvider(provider)) {
-      ignored.add(stage.hut_id);
+      ignored.add(hutId);
       continue;
     }
 
