@@ -214,7 +214,44 @@ async function upsertWithSchemaFallback({
 }
 
 const coverage = JSON.parse(fs.readFileSync(coverageFile, "utf8"));
-const tours = Array.isArray(coverage.tours) ? coverage.tours : [];
+const coverageTours = Array.isArray(coverage.tours) ? coverage.tours : [];
+
+async function patchRowsBatched(table, rows, keyField, batchSize = 100) {
+  if (!rows.length) return;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const chunk = rows.slice(i, i + batchSize);
+    for (const row of chunk) {
+      const key = String(row?.[keyField] ?? "").trim();
+      if (!key) continue;
+      const body = { ...row };
+      delete body[keyField];
+      await postgrest(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, "PATCH", table, {
+        rows: body,
+        query: {
+          [keyField]: `eq.${key}`,
+        },
+      });
+    }
+  }
+}
+
+async function patchRowsWithSchemaFallback({
+  table,
+  preferredRows,
+  fallbackRows,
+  keyField,
+  batchSize,
+}) {
+  try {
+    await patchRowsBatched(table, preferredRows, keyField, batchSize);
+    return { usedFallback: false };
+  } catch (error) {
+    const msg = String(error?.message ?? error);
+    if (!msg.includes("PGRST204")) throw error;
+    await patchRowsBatched(table, fallbackRows, keyField, batchSize);
+    return { usedFallback: true, reason: msg };
+  }
+}
 
 const availabilityFiles = fs
   .readdirSync(outputDir)
@@ -270,11 +307,25 @@ function hutIdForRef(ref) {
   return existingByRef.get(String(ref))?.id ?? `ohrs-${ref}`;
 }
 
+const coverageRouteIds = [...new Set(coverageTours.map((tour) => String(tour?.routeId ?? "").trim()).filter(Boolean))];
+const existingRouteIds = new Set();
+if (coverageRouteIds.length > 0) {
+  const routesCsv = coverageRouteIds.map((id) => `"${id}"`).join(",");
+  const existingRouteRows = await selectRows("routes", {
+    select: "id",
+    id: `in.(${routesCsv})`,
+    limit: "5000",
+  });
+  for (const row of existingRouteRows ?? []) {
+    if (row?.id) existingRouteIds.add(String(row.id));
+  }
+}
+const tours = coverageTours.filter((tour) => existingRouteIds.has(String(tour?.routeId ?? "").trim()));
+
 const { seasonStart, seasonEnd } = getSeasonWindow();
 
 const routesRows = tours.map((t) => ({
   id: t.routeId,
-  slug: t.routeId,
   name: t.tourName,
   stage_count: Math.max(0, t.huts?.length ?? 0),
   duration_days: Math.max(2, (t.huts?.length ?? 1) + 1),
@@ -284,7 +335,6 @@ const routesRows = tours.map((t) => ({
 }));
 const routesRowsBase = routesRows.map((route) => ({
   id: route.id,
-  slug: route.slug,
   name: route.name,
   stage_count: route.stage_count,
   duration_days: route.duration_days,
@@ -433,11 +483,11 @@ if (fs.existsSync(SCRAPE_SUMMARY_FILE)) {
   }
 }
 
-const routesSync = await upsertWithSchemaFallback({
+const routesSync = await patchRowsWithSchemaFallback({
   table: "routes",
   preferredRows: routesRows,
   fallbackRows: routesRowsBase,
-  onConflict: "id",
+  keyField: "id",
 });
 const hutsSync = await upsertWithSchemaFallback({
   table: "huts",
@@ -487,6 +537,7 @@ await upsertBatched("scrape_runs", [
             .filter(Boolean)
         : [],
       routeCount: routesRows.length,
+      skippedCoverageRouteCount: coverageTours.length - tours.length,
       hutCount: hutsRowsExtended.length,
       stageCount: stageRowsExtended.length,
       availabilityRows: availabilityRows.length,
@@ -503,6 +554,7 @@ console.log(
     {
       upserted: true,
       routes: routesRows.length,
+      skippedCoverageRoutes: coverageTours.length - tours.length,
       huts: hutsRowsExtended.length,
       route_stages: stageRowsExtended.length,
       availability_daily: availabilityRows.length,
