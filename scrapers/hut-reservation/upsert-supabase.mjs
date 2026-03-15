@@ -274,6 +274,7 @@ const { seasonStart, seasonEnd } = getSeasonWindow();
 
 const routesRows = tours.map((t) => ({
   id: t.routeId,
+  slug: t.routeId,
   name: t.tourName,
   duration_days: Math.max(2, (t.huts?.length ?? 1) + 1),
   season_start: seasonStart,
@@ -282,6 +283,7 @@ const routesRows = tours.map((t) => ({
 }));
 const routesRowsBase = routesRows.map((route) => ({
   id: route.id,
+  slug: route.slug,
   name: route.name,
   duration_days: route.duration_days,
   is_active: route.is_active,
