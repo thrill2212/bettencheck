@@ -276,6 +276,7 @@ const routesRows = tours.map((t) => ({
   id: t.routeId,
   slug: t.routeId,
   name: t.tourName,
+  stage_count: Math.max(0, t.huts?.length ?? 0),
   duration_days: Math.max(2, (t.huts?.length ?? 1) + 1),
   season_start: seasonStart,
   season_end: seasonEnd,
@@ -285,6 +286,7 @@ const routesRowsBase = routesRows.map((route) => ({
   id: route.id,
   slug: route.slug,
   name: route.name,
+  stage_count: route.stage_count,
   duration_days: route.duration_days,
   is_active: route.is_active,
 }));
