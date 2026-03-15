@@ -280,7 +280,7 @@ for (const doc of availabilityDocs) {
 }
 
 const allRefs = new Set();
-for (const t of tours) {
+for (const t of coverageTours) {
   for (const h of t.huts ?? []) {
     const ref = String(h.ohrsHutId ?? "").trim();
     if (ref) allRefs.add(ref);
