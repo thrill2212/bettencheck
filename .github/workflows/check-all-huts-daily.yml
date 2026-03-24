@@ -1,0 +1,115 @@
+name: Check All Huts Availability (Daily)
+
+# Scrapes ALL huts in the database, not just tour-linked ones.
+# Runs once daily at 04:00 UTC — provides availability data for the
+# Hüttenkarte feature on huettentouren.org.
+#
+# Tour-linked huts are still scraped every 3-6h by the existing workflows.
+# This workflow covers the ~550 additional huts that aren't in any tour.
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: hut-availability-all-huts
+  cancel-in-progress: false
+
+jobs:
+  check-all-huts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build FULL hut list from database (all providers)
+        run: |
+          set -euo pipefail
+          node scripts/build-live-target-lists.mjs \
+            --all-huts \
+            --hut-output scrapers/hut-reservation/huts.all.json \
+            --huettenholiday-output scrapers/huettenholiday/cabins.all.json
+          echo "Generated hut lists:"
+          echo "  hut-reservation: $(jq 'length' scrapers/hut-reservation/huts.all.json) huts"
+          echo "  huettenholiday:  $(jq 'length' scrapers/huettenholiday/cabins.all.json) cabins"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      # --- hut-reservation (largest provider) ---
+
+      - name: Check hut-reservation availability (all huts, first pass)
+        run: bash scrapers/hut-reservation/check-availability.sh
+        id: scrape_all_hr_first
+        working-directory: ${{ github.workspace }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TOUR_COVERAGE_FILE: ./tour-id-coverage.json
+          HUT_LIST_FILE: ./huts.all.json
+          FETCH_HUT_INFO: "true"
+          REQUEST_DELAY_SECONDS: "0.25"
+          MAX_RETRIES: "3"
+          RETRY_DELAY_SECONDS: "5"
+          BLOCK_COOLDOWN_SECONDS: "30"
+          FAILED_HUTS_FILE: ./availability-results/failed-huts.all-first.json
+          SCRAPE_SUMMARY_FILE: ./availability-results/scrape-summary.all-first.json
+          FAIL_ON_HUT_ERRORS: "false"
+          BETTENCHECK_RUN_ID: "${{ github.run_id }}-all-first"
+
+      - name: Repair failed huts (all huts, second pass)
+        if: always()
+        run: |
+          set -euo pipefail
+          SUMMARY="scrapers/hut-reservation/availability-results/scrape-summary.all-first.json"
+          if [ ! -f "$SUMMARY" ]; then
+            echo "First-pass summary missing."
+            exit 0
+          fi
+          first_failed=$(jq '.failedCount // 0' "$SUMMARY")
+          if [ "$first_failed" -eq 0 ]; then
+            echo "No failed huts."
+            exit 0
+          fi
+          echo "Repairing ${first_failed} failed huts..."
+          bash scrapers/hut-reservation/check-availability.sh
+        working-directory: ${{ github.workspace }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TOUR_COVERAGE_FILE: ./tour-id-coverage.json
+          HUT_LIST_FILE: ./availability-results/failed-huts.all-first.json
+          FETCH_HUT_INFO: "false"
+          FETCH_HUT_INFO_MODE: "missing-cache"
+          REQUEST_DELAY_SECONDS: "0.25"
+          MAX_RETRIES: "3"
+          RETRY_DELAY_SECONDS: "5"
+          BLOCK_COOLDOWN_SECONDS: "30"
+          FAILED_HUTS_FILE: ./availability-results/failed-huts.all-repair.json
+          SCRAPE_SUMMARY_FILE: ./availability-results/scrape-summary.all-repair.json
+          FAIL_ON_HUT_ERRORS: "false"
+          BETTENCHECK_RUN_ID: "${{ github.run_id }}-all-repair"
+
+      # --- huettenholiday ---
+
+      - name: Check huettenholiday availability (all cabins)
+        if: always()
+        run: bash scrapers/huettenholiday/check-availability.sh
+        working-directory: ${{ github.workspace }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CABIN_LIST_FILE: ./cabins.all.json
+          BETTENCHECK_RUN_ID: "${{ github.run_id }}-all-hh"
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: all-huts-daily-results-${{ github.run_number }}
+          path: |
+            scrapers/hut-reservation/availability-results/*.json
+            scrapers/huettenholiday/availability-results/*.json
+          retention-days: 14
