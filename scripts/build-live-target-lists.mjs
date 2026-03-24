@@ -100,60 +100,34 @@ async function fetchPublishedRouteIds({ supabaseUrl, serviceRoleKey, explicitRou
   return (data ?? []).map((row) => row.id);
 }
 
-async function main() {
-  const args = parseArgs(process.argv);
-  const hutOutput = args["hut-output"] ?? "scrapers/hut-reservation/huts.from-live-targets.json";
-  const huettenholidayOutput =
-    args["huettenholiday-output"] ?? "scrapers/huettenholiday/cabins.from-live-targets.json";
-  const explicitRouteIds = parseExplicitRouteIds(
-    args["route-ids"] ?? process.env.LIVE_AVAILABILITY_ROUTE_IDS,
-  );
+// ---------------------------------------------------------------------------
+// Fetch ALL huts from the huts table (--all-huts mode)
+// ---------------------------------------------------------------------------
 
-  const supabaseUrl = requireEnv("SUPABASE_URL");
-  const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const restBase = `${supabaseUrl.replace(/\/$/, "")}/rest/v1`;
-  const headers = toRestHeaders(serviceRoleKey);
+async function fetchAllHuts({ restBase, headers }) {
+  const params = new URLSearchParams();
+  params.set("select", "id,name,provider,provider_ref");
+  params.set("order", "id.asc");
+  // Supabase returns max 1000 rows by default — paginate to get all
+  params.set("limit", "2000");
+  const data = await getJson(`${restBase}/huts?${params.toString()}`, headers);
+  return data ?? [];
+}
 
-  const routeIds = await fetchPublishedRouteIds({
-    supabaseUrl,
-    serviceRoleKey,
-    explicitRouteIds,
-  });
+// ---------------------------------------------------------------------------
+// Shared: classify huts into provider-specific maps
+// ---------------------------------------------------------------------------
 
-  let stages = [];
-  if (routeIds.length > 0) {
-    const quoted = routeIds.map((id) => `"${id}"`).join(",");
-    const params = new URLSearchParams();
-    params.set("select", "route_id,day_index,overnight_hut_id");
-    params.set("route_id", `in.(${quoted})`);
-    params.set("order", "route_id.asc,day_index.asc");
-    stages = await getJson(`${restBase}/route_stages?${params.toString()}`, headers);
-  }
-
-  const hutIds = [...new Set(stages.map((row) => getStageAvailabilityHutId(row)).filter(Boolean))];
-  const hutsById = new Map();
-  if (hutIds.length > 0) {
-    const quoted = hutIds.map((id) => `"${id}"`).join(",");
-    const params = new URLSearchParams();
-    params.set("select", "id,name,provider,provider_ref");
-    params.set("id", `in.(${quoted})`);
-    const data = await getJson(`${restBase}/huts?${params.toString()}`, headers);
-    for (const hut of data ?? []) hutsById.set(hut.id, hut);
-  }
-
+function classifyHuts(allHuts) {
   const hutReservationMap = new Map();
   const huettenholidayMap = new Map();
   const ignored = new Set();
 
-  for (const stage of stages) {
-    const hutId = getStageAvailabilityHutId(stage);
-    const hut = hutsById.get(hutId);
-    if (!hut) continue;
-
+  for (const hut of allHuts) {
     const provider = toSafeString(hut.provider).toLowerCase();
     const providerRef = toSafeString(hut.provider_ref);
     if (!provider || !providerRef || !isAvailabilityRequiredProvider(provider)) {
-      ignored.add(hutId);
+      ignored.add(hut.id);
       continue;
     }
 
@@ -184,6 +158,109 @@ async function main() {
     }
   }
 
+  return { hutReservationMap, huettenholidayMap, ignored };
+}
+
+async function main() {
+  const args = parseArgs(process.argv);
+  const allHutsMode = args["all-huts"] === "true";
+  const hutOutput = args["hut-output"] ?? "scrapers/hut-reservation/huts.from-live-targets.json";
+  const huettenholidayOutput =
+    args["huettenholiday-output"] ?? "scrapers/huettenholiday/cabins.from-live-targets.json";
+  const explicitRouteIds = parseExplicitRouteIds(
+    args["route-ids"] ?? process.env.LIVE_AVAILABILITY_ROUTE_IDS,
+  );
+
+  const supabaseUrl = requireEnv("SUPABASE_URL");
+  const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const restBase = `${supabaseUrl.replace(/\/$/, "")}/rest/v1`;
+  const headers = toRestHeaders(serviceRoleKey);
+
+  let hutReservationMap, huettenholidayMap, ignored;
+  let routeCount = 0;
+  let stageCount = 0;
+
+  if (allHutsMode) {
+    // --all-huts: fetch every hut from the huts table, regardless of routes
+    const allHuts = await fetchAllHuts({ restBase, headers });
+    ({ hutReservationMap, huettenholidayMap, ignored } = classifyHuts(allHuts));
+    console.error(`[all-huts] Fetched ${allHuts.length} huts from database`);
+  } else {
+    // Default: only huts linked to published routes (existing behavior)
+    const routeIds = await fetchPublishedRouteIds({
+      supabaseUrl,
+      serviceRoleKey,
+      explicitRouteIds,
+    });
+    routeCount = routeIds.length;
+
+    let stages = [];
+    if (routeIds.length > 0) {
+      const quoted = routeIds.map((id) => `"${id}"`).join(",");
+      const params = new URLSearchParams();
+      params.set("select", "route_id,day_index,overnight_hut_id");
+      params.set("route_id", `in.(${quoted})`);
+      params.set("order", "route_id.asc,day_index.asc");
+      stages = await getJson(`${restBase}/route_stages?${params.toString()}`, headers);
+    }
+    stageCount = stages.length;
+
+    const hutIds = [...new Set(stages.map((row) => getStageAvailabilityHutId(row)).filter(Boolean))];
+    const hutsById = new Map();
+    if (hutIds.length > 0) {
+      const quoted = hutIds.map((id) => `"${id}"`).join(",");
+      const params = new URLSearchParams();
+      params.set("select", "id,name,provider,provider_ref");
+      params.set("id", `in.(${quoted})`);
+      const data = await getJson(`${restBase}/huts?${params.toString()}`, headers);
+      for (const hut of data ?? []) hutsById.set(hut.id, hut);
+    }
+
+    // Classify from stages (existing behavior: iterate stages, not raw huts)
+    hutReservationMap = new Map();
+    huettenholidayMap = new Map();
+    ignored = new Set();
+
+    for (const stage of stages) {
+      const hutId = getStageAvailabilityHutId(stage);
+      const hut = hutsById.get(hutId);
+      if (!hut) continue;
+
+      const provider = toSafeString(hut.provider).toLowerCase();
+      const providerRef = toSafeString(hut.provider_ref);
+      if (!provider || !providerRef || !isAvailabilityRequiredProvider(provider)) {
+        ignored.add(hutId);
+        continue;
+      }
+
+      if (provider === "hut-reservation") {
+        const id = Number(providerRef);
+        if (!Number.isFinite(id)) continue;
+        if (!hutReservationMap.has(id)) {
+          hutReservationMap.set(id, {
+            hutId: id,
+            hutName: toSafeString(hut.name) || `hut-${id}`,
+          });
+        }
+        continue;
+      }
+
+      if (provider === "huettenholiday") {
+        const cabinId = Number(providerRef);
+        if (!Number.isFinite(cabinId)) continue;
+        if (!huettenholidayMap.has(cabinId)) {
+          const cabinName = toSafeString(hut.name) || `Cabin ${cabinId}`;
+          huettenholidayMap.set(cabinId, {
+            cabinId,
+            cabinName,
+            cabinSlug: slugify(cabinName) || `cabin-${cabinId}`,
+            cabinSearchTerm: defaultSearchTerm(cabinName),
+          });
+        }
+      }
+    }
+  }
+
   const huts = [...hutReservationMap.values()].sort((a, b) => a.hutId - b.hutId);
   const cabins = [...huettenholidayMap.values()].sort((a, b) => a.cabinId - b.cabinId);
 
@@ -194,8 +271,9 @@ async function main() {
     JSON.stringify(
       {
         source: "supabase",
-        routeCount: routeIds.length,
-        stageCount: stages.length,
+        mode: allHutsMode ? "all-huts" : "route-scoped",
+        routeCount,
+        stageCount,
         hutReservationCount: huts.length,
         huettenholidayCount: cabins.length,
         ignoredHutIds: ignored.size,
