@@ -94,17 +94,41 @@ jobs:
           FAIL_ON_HUT_ERRORS: "false"
           BETTENCHECK_RUN_ID: "${{ github.run_id }}-all-repair"
 
+      # --- Normalize + upsert hut-reservation results ---
+
+      - name: Normalize and upsert hut-reservation to Supabase
+        if: always()
+        run: |
+          node scripts/normalize-and-upsert.mjs \
+            --source hut-reservation \
+            --input-dir scrapers/hut-reservation/availability-results \
+            --run-id "${{ github.run_id }}-all" \
+            --scraper-outcome "${{ steps.scrape_all_hr_first.outcome }}"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
       # --- huettenholiday ---
 
       - name: Check huettenholiday availability (all cabins)
         if: always()
+        id: scrape_all_hh
         run: bash scrapers/huettenholiday/check-availability.sh
         working-directory: ${{ github.workspace }}
         env:
+          CABIN_LIST_FILE: ./cabins.all.json
+
+      - name: Normalize and upsert huettenholiday to Supabase
+        if: always()
+        run: |
+          node scripts/normalize-and-upsert.mjs \
+            --source huettenholiday \
+            --input-dir scrapers/huettenholiday/availability-results \
+            --run-id "${{ github.run_id }}-all-hh" \
+            --scraper-outcome "${{ steps.scrape_all_hh.outcome }}"
+        env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          CABIN_LIST_FILE: ./cabins.all.json
-          BETTENCHECK_RUN_ID: "${{ github.run_id }}-all-hh"
 
       - name: Upload results
         uses: actions/upload-artifact@v4

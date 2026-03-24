@@ -601,12 +601,12 @@ main() {
     timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     local output_file="$OUTPUT_DIR/availability-$(date -u '+%Y-%m-%d').json"
 
-    jq -n \
+    # Pipe cabins_json via stdin to avoid "Argument list too long" for large hut sets
+    echo "$cabins_json" | jq -n \
         --arg scraped_at "$timestamp" \
-        --argjson cabins "$cabins_json" \
         '{
             scrapedAt: $scraped_at,
-            cabins: $cabins
+            cabins: input
         }' > "$output_file"
 
     log_info "Results saved to: $output_file"
