@@ -106,12 +106,37 @@ async function fetchPublishedRouteIds({ supabaseUrl, serviceRoleKey, explicitRou
 
 async function fetchAllHuts({ restBase, headers }) {
   const params = new URLSearchParams();
-  params.set("select", "id,name,provider,provider_ref");
+  params.set("select", "id,name,provider,provider_ref,season_open,season_close");
   params.set("order", "id.asc");
   // Supabase returns max 1000 rows by default — paginate to get all
   params.set("limit", "2000");
   const data = await getJson(`${restBase}/huts?${params.toString()}`, headers);
   return data ?? [];
+}
+
+async function fetchTourLinkedHutIds({ restBase, headers, supabaseUrl, serviceRoleKey }) {
+  const routeIds = await fetchPublishedRouteIds({ supabaseUrl, serviceRoleKey, explicitRouteIds: [] });
+  if (routeIds.length === 0) return new Set();
+  const quoted = routeIds.map((id) => `"${id}"`).join(",");
+  const params = new URLSearchParams();
+  params.set("select", "overnight_hut_id");
+  params.set("route_id", `in.(${quoted})`);
+  const stages = await getJson(`${restBase}/route_stages?${params.toString()}`, headers);
+  return new Set((stages ?? []).map((s) => toSafeString(s.overnight_hut_id)).filter(Boolean));
+}
+
+/**
+ * Filter huts to only those currently in season (or with unknown season).
+ * Huts with season_open/season_close = null are always included (unknown season).
+ */
+function filterInSeason(allHuts) {
+  const today = new Date().toISOString().split("T")[0];
+  return allHuts.filter((hut) => {
+    if (!hut.season_open && !hut.season_close) return true; // unknown = include
+    if (hut.season_open && today < hut.season_open) return false; // hasn't opened yet
+    if (hut.season_close && today > hut.season_close) return false; // already closed
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +189,8 @@ function classifyHuts(allHuts) {
 async function main() {
   const args = parseArgs(process.argv);
   const allHutsMode = args["all-huts"] === "true";
+  const excludeTourHuts = args["exclude-tour-huts"] === "true";
+  const seasonFilter = args["season-filter"] === "true";
   const hutOutput = args["hut-output"] ?? "scrapers/hut-reservation/huts.from-live-targets.json";
   const huettenholidayOutput =
     args["huettenholiday-output"] ?? "scrapers/huettenholiday/cabins.from-live-targets.json";
@@ -182,9 +209,25 @@ async function main() {
 
   if (allHutsMode) {
     // --all-huts: fetch every hut from the huts table, regardless of routes
-    const allHuts = await fetchAllHuts({ restBase, headers });
-    ({ hutReservationMap, huettenholidayMap, ignored } = classifyHuts(allHuts));
+    let allHuts = await fetchAllHuts({ restBase, headers });
     console.error(`[all-huts] Fetched ${allHuts.length} huts from database`);
+
+    // --exclude-tour-huts: remove huts already scraped by the 3-6h tour workflow
+    if (excludeTourHuts) {
+      const tourHutIds = await fetchTourLinkedHutIds({ restBase, headers, supabaseUrl, serviceRoleKey });
+      const before = allHuts.length;
+      allHuts = allHuts.filter((h) => !tourHutIds.has(h.id));
+      console.error(`[exclude-tour-huts] Excluded ${before - allHuts.length} tour-linked huts (${tourHutIds.size} in tours)`);
+    }
+
+    // --season-filter: only include huts currently in season (or unknown season)
+    if (seasonFilter) {
+      const before = allHuts.length;
+      allHuts = filterInSeason(allHuts);
+      console.error(`[season-filter] Kept ${allHuts.length} in-season huts (removed ${before - allHuts.length} out-of-season)`);
+    }
+
+    ({ hutReservationMap, huettenholidayMap, ignored } = classifyHuts(allHuts));
   } else {
     // Default: only huts linked to published routes (existing behavior)
     const routeIds = await fetchPublishedRouteIds({
