@@ -25,6 +25,7 @@ function parseArgs(argv) {
 function getDefaultInputDir(source) {
   if (source === "hut-reservation") return "scrapers/hut-reservation/availability-results";
   if (source === "huettenholiday") return "scrapers/huettenholiday/availability-results";
+  if (source === "cai-prenota-rifugi") return "scrapers/cai-prenota-rifugi/availability-results";
   if (source === "casablanca") return "scrapers/casablanca/availability-results";
   return "";
 }
@@ -227,6 +228,106 @@ async function upsertHuettenholidayHuts({
   }
 }
 
+function selectLatestCabins(filePaths, selectCabinKey, payloadCabinsKey = "cabins") {
+  const byId = new Map();
+
+  for (const filePath of filePaths) {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const payload = JSON.parse(raw);
+    const checkedAtRaw = payload?.scrapedAt;
+    const checkedAt = checkedAtRaw ? new Date(checkedAtRaw).getTime() : Date.now();
+    const cabins = Array.isArray(payload?.[payloadCabinsKey]) ? payload[payloadCabinsKey] : [];
+
+    for (const cabin of cabins) {
+      const key = selectCabinKey(cabin);
+      if (!key) continue;
+      const prev = byId.get(key);
+      if (!prev || checkedAt >= prev.checkedAt) {
+        byId.set(key, { cabin, checkedAt });
+      }
+    }
+  }
+
+  return byId;
+}
+
+async function fetchProviderMappingByRefs({
+  supabaseUrl,
+  serviceRoleKey,
+  provider,
+  providerRefs,
+}) {
+  if (providerRefs.length === 0) return {};
+  const headers = toRestHeaders(serviceRoleKey);
+  const mapping = {};
+  const chunkSize = 200;
+
+  for (let index = 0; index < providerRefs.length; index += chunkSize) {
+    const chunk = providerRefs.slice(index, index + chunkSize);
+    const quoted = chunk.map((value) => `"${String(value).replace(/"/g, '\\"')}"`).join(",");
+    const url =
+      `${supabaseUrl}/rest/v1/huts?select=id,provider_ref` +
+      `&provider=eq.${encodeURIComponent(provider)}` +
+      `&provider_ref=in.(${quoted})`;
+    const rows = await getJson(url, toRestHeaders(serviceRoleKey));
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const key = String(row?.provider_ref ?? "").trim();
+      const value = String(row?.id ?? "").trim();
+      if (!key || !value) continue;
+      mapping[key] = value;
+    }
+  }
+
+  return mapping;
+}
+
+async function upsertCaiPrenotaRifugiHuts({
+  supabaseUrl,
+  serviceRoleKey,
+  filePaths,
+}) {
+  const byId = selectLatestCabins(filePaths, (cabin) => String(cabin?.id ?? "").trim());
+  const providerRefs = [...byId.keys()];
+  if (providerRefs.length === 0) return { upserted: 0, fallback: false, mapping: {} };
+
+  const rows = providerRefs.map((providerRef) => {
+    const { cabin } = byId.get(providerRef);
+    const metadata = cabin?.metadata ?? {};
+    const raw = metadata?.raw ?? {};
+
+    return {
+      provider: "cai-prenota-rifugi",
+      provider_ref: providerRef,
+      name: metadata?.name ?? cabin?.name ?? raw?.name ?? providerRef,
+      booking_url: metadata?.bookingUrl ?? metadata?.detailPageUrl ?? null,
+      operator: metadata?.caiBranch ?? metadata?.region ?? "CAI",
+      elevation_m: toElevationOrDefault(metadata?.altitude, 1),
+      website_url: metadata?.websiteUrl ?? null,
+      booking_platform: "prenotarifugi.cai.it",
+      phone: metadata?.phone ?? null,
+      email: metadata?.email ?? null,
+      warden_name: null,
+      sleeping_places_total: toPositiveIntOrNull(metadata?.sleepingPlacesTotal),
+      price_from_eur: toNumberOrNull(metadata?.priceFromEur),
+      latitude: toNumberOrNull(metadata?.latitude),
+      longitude: toNumberOrNull(metadata?.longitude),
+      source_url: metadata?.detailPageUrl ?? metadata?.bookingUrl ?? null,
+    };
+  });
+
+  const url = `${supabaseUrl}/rest/v1/huts?on_conflict=provider,provider_ref`;
+  await upsertBatched(url, toRestHeaders(serviceRoleKey), rows, 200);
+
+  const mapping = await fetchProviderMappingByRefs({
+    supabaseUrl,
+    serviceRoleKey,
+    provider: "cai-prenota-rifugi",
+    providerRefs,
+  });
+
+  return { upserted: rows.length, fallback: false, mapping };
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const source = args.source;
@@ -302,6 +403,20 @@ async function main() {
     throw new Error(`No JSON files found in ${inputDir}.`);
   }
 
+  let caiPrenotaRifugiHutsSync = null;
+  if (source === "cai-prenota-rifugi") {
+    caiPrenotaRifugiHutsSync = await upsertCaiPrenotaRifugiHuts({
+      supabaseUrl,
+      serviceRoleKey,
+      filePaths,
+    });
+    if (!mapping[source]) mapping[source] = {};
+    mapping[source] = {
+      ...(mapping[source] ?? {}),
+      ...(caiPrenotaRifugiHutsSync?.mapping ?? {}),
+    };
+  }
+
   const rows = normalizeFiles({
     source,
     filePaths,
@@ -357,12 +472,15 @@ async function main() {
       rowCount: rows.length,
       hutsUpserted: huettenholidayHutsSync?.upserted ?? 0,
       hutsSchemaFallback: huettenholidayHutsSync?.fallback ?? false,
+      caiHutsUpserted: caiPrenotaRifugiHutsSync?.upserted ?? 0,
     },
   });
 
   const hutsInfo =
     source === "huettenholiday"
       ? ` huts=${huettenholidayHutsSync?.upserted ?? 0} (fallback=${huettenholidayHutsSync?.fallback ?? false})`
+      : source === "cai-prenota-rifugi"
+        ? ` huts=${caiPrenotaRifugiHutsSync?.upserted ?? 0}`
       : "";
   console.log(`[${source}] normalized ${rows.length} rows from ${filePaths.length} files and upserted successfully.${hutsInfo}`);
 }

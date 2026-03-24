@@ -115,6 +115,37 @@ export function normalizeHuettenholidayPayload(payload, mapping) {
   return rows;
 }
 
+export function normalizeCaiPrenotaRifugiPayload(payload, mapping) {
+  const checkedAt = normalizeCheckedAt(payload.scrapedAt);
+  const cabins = Array.isArray(payload.cabins) ? payload.cabins : [];
+  const rows = [];
+
+  for (const cabin of cabins) {
+    const hutId = mapping[String(cabin.id)];
+    if (!hutId) continue;
+    const availability = Array.isArray(cabin.availability) ? cabin.availability : [];
+    for (const day of availability) {
+      const date = toIsoDate(day.date);
+      if (!date) continue;
+      let status = String(day.status ?? "").trim().toLowerCase();
+      if (status !== "available" && status !== "unavailable" && status !== "closed") {
+        status = "unavailable";
+      }
+      rows.push({
+        hut_id: hutId,
+        date,
+        available_beds: null,
+        status,
+        confidence: "inferred",
+        source: "cai-prenota-rifugi",
+        checked_at: checkedAt,
+      });
+    }
+  }
+
+  return rows;
+}
+
 export function normalizeCasablancaPayload(payload, mapping, resortId = DEFAULT_CASABLANCA_RESORT) {
   const hutId = mapping[resortId];
   if (!hutId) {
@@ -172,6 +203,8 @@ export function normalizeFiles({
       rows.push(...normalizeHutReservationPayload(payload, mapping["hut-reservation"] ?? {}));
     } else if (source === "huettenholiday") {
       rows.push(...normalizeHuettenholidayPayload(payload, mapping.huettenholiday ?? {}));
+    } else if (source === "cai-prenota-rifugi") {
+      rows.push(...normalizeCaiPrenotaRifugiPayload(payload, mapping["cai-prenota-rifugi"] ?? {}));
     } else if (source === "casablanca") {
       rows.push(...normalizeCasablancaPayload(payload, mapping.casablanca ?? {}, resortId));
     } else {

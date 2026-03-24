@@ -1,0 +1,24 @@
+name: Discover Hut Seasons (Monthly)
+
+# Determines when each hut opens and closes by analyzing existing
+# availability data. Writes season_open/season_close to the huts table.
+# The daily all-huts scraper uses these to skip out-of-season huts.
+
+on:
+  schedule:
+    - cron: "0 3 1 * *"   # 1st of every month at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  discover-seasons:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Discover hut season windows
+        run: node scripts/discover-hut-seasons.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

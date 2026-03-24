@@ -7,6 +7,7 @@ summary.md
 **/huts.from-coverage.json
 **/*.missing-live-targets.json
 **/*.stale-*.json
+scrapers/cai-prenota-rifugi/data/*.json
 
 # OS files
 .DS_Store
