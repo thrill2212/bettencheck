@@ -128,8 +128,8 @@ function getSeasonWindow(now = new Date()) {
   const day = now.getUTCDate();
   const seasonYear = month > 10 || (month === 10 && day > 1) ? year + 1 : year;
   return {
-    seasonStart: `${seasonYear}-06-01`,
-    seasonEnd: `${seasonYear}-10-01`,
+    seasonStart: `${seasonYear}-01-01`,
+    seasonEnd: `${seasonYear}-12-31`,
   };
 }
 

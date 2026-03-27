@@ -181,10 +181,9 @@ else
   season_year=$current_year
 fi
 
-# Season window — widened to Apr 1 – Oct 31 to catch early/late openers.
-# The build-live-target-lists.mjs --season-filter handles per-hut filtering.
-season_start="${SEASON_START:-${season_year}-04-01}"
-season_end="${SEASON_END:-${season_year}-10-31}"
+# Scrape the full booking year by default.
+season_start="${SEASON_START:-${season_year}-01-01}"
+season_end="${SEASON_END:-${season_year}-12-31}"
 
 echo "=========================================="
 echo "Checking Hut Availability"

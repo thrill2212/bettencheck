@@ -129,8 +129,8 @@ Das Script erstellt JSON-Dateien im Verzeichnis `availability-results/`:
   "bookingUrl": "https://www.hut-reservation.org/reservation/book-hut/366/wizard",
   "checkedAt": "2026-02-20T19:21:41Z",
   "season": {
-    "start": "2026-06-01",
-    "end": "2026-10-01"
+    "start": "2026-01-01",
+    "end": "2026-12-31"
   },
   "hutInfo": {
     "tenantCode": "DAV",
