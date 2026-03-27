@@ -182,8 +182,9 @@ else
 fi
 
 # Scrape the full booking year by default.
+# `season_end` is exclusive, so use Jan 1 of the following year.
 season_start="${SEASON_START:-${season_year}-01-01}"
-season_end="${SEASON_END:-${season_year}-12-31}"
+season_end="${SEASON_END:-$((season_year + 1))-01-01}"
 
 echo "=========================================="
 echo "Checking Hut Availability"

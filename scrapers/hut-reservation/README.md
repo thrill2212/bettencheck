@@ -130,7 +130,7 @@ Das Script erstellt JSON-Dateien im Verzeichnis `availability-results/`:
   "checkedAt": "2026-02-20T19:21:41Z",
   "season": {
     "start": "2026-01-01",
-    "end": "2026-12-31"
+    "end": "2027-01-01"
   },
   "hutInfo": {
     "tenantCode": "DAV",

@@ -20,8 +20,8 @@ function getSeasonBounds(now = new Date()) {
   const day = now.getUTCDate();
   const seasonYear = month > 10 || (month === 10 && day > 1) ? year + 1 : year;
   return {
-    start: `${seasonYear}-06-01`,
-    end: `${seasonYear}-10-01`,
+    start: `${seasonYear}-01-01`,
+    end: `${seasonYear + 1}-01-01`,
   };
 }
 
