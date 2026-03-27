@@ -16,6 +16,8 @@ OUTPUT_DIR="availability-results"
 BASE_URL="https://www.huetten-holiday.com"
 IMAGE_BASE_URL="https://huetten-holiday.fra1.digitaloceanspaces.com/images"
 TEMP_DIR="/tmp/huettenholiday-$$"
+START_MONTH="${START_MONTH:-1}"
+END_MONTH="${END_MONTH:-12}"
 
 # Colors for terminal output
 RED='\033[0;31m'
@@ -88,18 +90,35 @@ initialize_session() {
     echo "$csrf_token"
 }
 
-# Determine season (June-October)
+# Determine target year for the booking window.
 get_season_info() {
     local current_month
     current_month=$(date +%-m)
     local current_year
     current_year=$(date +%Y)
 
-    # If after October 1st, use next year
+    # If after October 1st, booking windows usually point at the next year.
     if [ "$current_month" -gt 10 ]; then
         echo $((current_year + 1))
     else
         echo "$current_year"
+    fi
+}
+
+validate_month_window() {
+    if ! [[ "$START_MONTH" =~ ^[0-9]+$ ]] || ! [[ "$END_MONTH" =~ ^[0-9]+$ ]]; then
+        log_error "START_MONTH and END_MONTH must be integers (got START_MONTH=$START_MONTH, END_MONTH=$END_MONTH)"
+        exit 1
+    fi
+
+    if [ "$START_MONTH" -lt 1 ] || [ "$START_MONTH" -gt 12 ] || [ "$END_MONTH" -lt 1 ] || [ "$END_MONTH" -gt 12 ]; then
+        log_error "START_MONTH and END_MONTH must be between 1 and 12 (got START_MONTH=$START_MONTH, END_MONTH=$END_MONTH)"
+        exit 1
+    fi
+
+    if [ "$START_MONTH" -gt "$END_MONTH" ]; then
+        log_error "START_MONTH must be <= END_MONTH for a single-year scrape window (got START_MONTH=$START_MONTH, END_MONTH=$END_MONTH)"
+        exit 1
     fi
 }
 
@@ -440,8 +459,8 @@ scrape_cabin() {
 
     local all_availability="[]"
 
-    # Loop through months (June to October: 6-10)
-    for month in {6..10}; do
+    # Loop through the configured month window for the target year.
+    for ((month=START_MONTH; month<=END_MONTH; month++)); do
         log_info "  Fetching month $month/$year..."
 
         local raw_data
@@ -545,6 +564,7 @@ main() {
     echo ""
 
     log_info "Starting Hüttenholiday scraper..."
+    validate_month_window
 
     # Initialize session
     local csrf_token
@@ -556,7 +576,7 @@ main() {
     # Get season year
     local year
     year=$(get_season_info)
-    log_info "Scraping season: $year"
+    log_info "Scraping booking window: $year-$(printf '%02d' "$START_MONTH") to $year-$(printf '%02d' "$END_MONTH")"
 
     # Load cabin rows from live-target file or fallback defaults.
     # Avoid `mapfile` for Bash 3 compatibility on macOS.

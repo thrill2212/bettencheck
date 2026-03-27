@@ -1,6 +1,6 @@
 # Hüttenholiday Scraper
 
-Prüft die Verfügbarkeit von Hütten auf [huetten-holiday.com](https://www.huetten-holiday.com) für die Bergsaison.
+Prüft die Verfügbarkeit von Hütten auf [huetten-holiday.com](https://www.huetten-holiday.com) für das konfigurierbare Buchungsfenster der Hütten.
 
 ## Konfiguration
 
@@ -8,9 +8,15 @@ Prüft die Verfügbarkeit von Hütten auf [huetten-holiday.com](https://www.huet
 - Kemptner Hütte (Cabin ID: 27)
 - Memminger Hütte (Cabin ID: 24)
 
-**Saison:** Juni - Oktober (automatische Jahresauswahl)
+**Standard-Fenster:** Januar - Dezember (automatische Jahresauswahl)
 - Bei Datum nach 1. Oktober: Nächstes Jahr
 - Sonst: Aktuelles Jahr
+
+Optional eingrenzbar über:
+
+```bash
+START_MONTH=4 END_MONTH=10 bash check-availability.sh
+```
 
 ## Ausführung
 
