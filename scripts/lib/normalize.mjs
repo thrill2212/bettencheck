@@ -189,6 +189,47 @@ export function dedupeAvailabilityRows(rows) {
   return [...byKey.values()];
 }
 
+function isInSeasonStatus(status) {
+  return status === "available" || status === "unavailable";
+}
+
+export function buildSeasonPatchRows(rows) {
+  const byHut = new Map();
+
+  for (const row of rows) {
+    const hutId = String(row?.hut_id ?? "").trim();
+    const date = toIsoDate(row?.date);
+    if (!hutId || !date) continue;
+
+    const checkedAt = normalizeCheckedAt(row?.checked_at);
+    const entry =
+      byHut.get(hutId) ??
+      {
+        id: hutId,
+        season_open: null,
+        season_close: null,
+        season_checked_at: checkedAt,
+      };
+
+    if (isInSeasonStatus(row?.status)) {
+      if (!entry.season_open || date < entry.season_open) {
+        entry.season_open = date;
+      }
+      if (!entry.season_close || date > entry.season_close) {
+        entry.season_close = date;
+      }
+    }
+
+    if (checkedAt > entry.season_checked_at) {
+      entry.season_checked_at = checkedAt;
+    }
+
+    byHut.set(hutId, entry);
+  }
+
+  return [...byHut.values()];
+}
+
 export function normalizeFiles({
   source,
   filePaths,

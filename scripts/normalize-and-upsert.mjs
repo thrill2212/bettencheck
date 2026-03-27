@@ -3,7 +3,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { listJsonFiles, loadProviderMapping, normalizeFiles } from "./lib/normalize.mjs";
+import {
+  buildSeasonPatchRows,
+  listJsonFiles,
+  loadProviderMapping,
+  normalizeFiles,
+} from "./lib/normalize.mjs";
 
 function parseArgs(argv) {
   const args = {};
@@ -68,6 +73,18 @@ async function postJson(url, headers, body) {
   }
 }
 
+async function patchJson(url, headers, body) {
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`${response.status} ${response.statusText}: ${text}`);
+  }
+}
+
 async function getJson(url, headers) {
   const response = await fetch(url, {
     method: "GET",
@@ -116,6 +133,39 @@ async function upsertAvailabilityRows({
   if (rows.length === 0) return;
   const url = `${supabaseUrl}/rest/v1/availability_daily?on_conflict=hut_id,date`;
   await upsertBatched(url, toRestHeaders(serviceRoleKey), rows, 1000);
+}
+
+async function upsertHutSeasonRows({
+  supabaseUrl,
+  serviceRoleKey,
+  rows,
+}) {
+  if (rows.length === 0) return { upserted: 0, fallback: false };
+
+  try {
+    const headers = toRestHeaders(serviceRoleKey);
+    for (const row of rows) {
+      const id = String(row?.id ?? "").trim();
+      if (!id) continue;
+      const url =
+        `${supabaseUrl}/rest/v1/huts?` +
+        new URLSearchParams({
+          id: `eq.${id}`,
+        }).toString();
+      const body = {
+        season_open: row.season_open,
+        season_close: row.season_close,
+        season_checked_at: row.season_checked_at,
+      };
+      await patchJson(url, headers, body);
+    }
+    return { upserted: rows.length, fallback: false };
+  } catch (error) {
+    if (!String(error?.message ?? "").includes("PGRST204")) {
+      throw error;
+    }
+    return { upserted: 0, fallback: true };
+  }
 }
 
 async function upsertScrapeRun({
@@ -455,6 +505,12 @@ async function main() {
     });
   }
 
+  const seasonSync = await upsertHutSeasonRows({
+    supabaseUrl,
+    serviceRoleKey,
+    rows: buildSeasonPatchRows(rows),
+  });
+
   const finishedAt = new Date().toISOString();
   await upsertScrapeRun({
     supabaseUrl,
@@ -470,6 +526,8 @@ async function main() {
       inputDir,
       fileCount: filePaths.length,
       rowCount: rows.length,
+      seasonRowsUpserted: seasonSync.upserted,
+      seasonSchemaFallback: seasonSync.fallback,
       hutsUpserted: huettenholidayHutsSync?.upserted ?? 0,
       hutsSchemaFallback: huettenholidayHutsSync?.fallback ?? false,
       caiHutsUpserted: caiPrenotaRifugiHutsSync?.upserted ?? 0,
@@ -481,8 +539,10 @@ async function main() {
       ? ` huts=${huettenholidayHutsSync?.upserted ?? 0} (fallback=${huettenholidayHutsSync?.fallback ?? false})`
       : source === "cai-prenota-rifugi"
         ? ` huts=${caiPrenotaRifugiHutsSync?.upserted ?? 0}`
-      : "";
-  console.log(`[${source}] normalized ${rows.length} rows from ${filePaths.length} files and upserted successfully.${hutsInfo}`);
+        : "";
+  console.log(
+    `[${source}] normalized ${rows.length} rows from ${filePaths.length} files and upserted successfully.${hutsInfo} seasons=${seasonSync.upserted} (fallback=${seasonSync.fallback})`
+  );
 }
 
 main().catch(async (error) => {

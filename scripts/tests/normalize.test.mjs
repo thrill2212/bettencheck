@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildSeasonPatchRows,
   dedupeAvailabilityRows,
   normalizeCasablancaPayload,
   normalizeHuettenholidayPayload,
@@ -169,4 +170,43 @@ test("dedupeAvailabilityRows keeps the latest row for each hut/date", () => {
   const deduped = dedupeAvailabilityRows(rows);
   assert.equal(deduped.length, 1);
   assert.equal(deduped[0].available_beds, 4);
+});
+
+test("buildSeasonPatchRows derives season bounds from non-closed days", () => {
+  const rows = [
+    {
+      hut_id: "ohrs-477",
+      date: "2026-05-16",
+      status: "closed",
+      checked_at: "2026-03-27T16:20:00Z",
+    },
+    {
+      hut_id: "ohrs-477",
+      date: "2026-05-17",
+      status: "available",
+      checked_at: "2026-03-27T16:21:00Z",
+    },
+    {
+      hut_id: "ohrs-477",
+      date: "2026-09-30",
+      status: "unavailable",
+      checked_at: "2026-03-27T16:22:00Z",
+    },
+    {
+      hut_id: "ohrs-477",
+      date: "2026-10-01",
+      status: "closed",
+      checked_at: "2026-03-27T16:23:00Z",
+    },
+  ];
+
+  const seasonRows = buildSeasonPatchRows(rows);
+  assert.deepEqual(seasonRows, [
+    {
+      id: "ohrs-477",
+      season_open: "2026-05-17",
+      season_close: "2026-09-30",
+      season_checked_at: "2026-03-27T16:23:00.000Z",
+    },
+  ]);
 });

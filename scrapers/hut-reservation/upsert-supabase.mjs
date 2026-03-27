@@ -133,6 +133,33 @@ function getSeasonWindow(now = new Date()) {
   };
 }
 
+function buildSeasonFields(rows) {
+  let seasonOpen = null;
+  let seasonClose = null;
+  let seasonCheckedAt = null;
+
+  for (const row of rows) {
+    const date = String(row?.date ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+
+    if (row?.status === "available" || row?.status === "unavailable") {
+      if (!seasonOpen || date < seasonOpen) seasonOpen = date;
+      if (!seasonClose || date > seasonClose) seasonClose = date;
+    }
+
+    const checkedAt = String(row?.checked_at ?? "");
+    if (checkedAt && (!seasonCheckedAt || checkedAt > seasonCheckedAt)) {
+      seasonCheckedAt = checkedAt;
+    }
+  }
+
+  return {
+    season_open: seasonOpen,
+    season_close: seasonClose,
+    season_checked_at: seasonCheckedAt,
+  };
+}
+
 async function postgrest(url, key, method, table, { rows, onConflict, query } = {}) {
   const u = new URL(`${url.replace(/\/$/, "")}/rest/v1/${table}`);
   if (onConflict) u.searchParams.set("on_conflict", onConflict);
@@ -473,6 +500,18 @@ for (const row of availabilityRowsRaw) {
   }
 }
 const availabilityRows = [...availabilityByKey.values()];
+const seasonFieldsByHutId = new Map();
+for (const row of availabilityRows) {
+  const hutId = String(row?.hut_id ?? "").trim();
+  if (!hutId) continue;
+  const rowsForHut = seasonFieldsByHutId.get(hutId) ?? [];
+  rowsForHut.push(row);
+  seasonFieldsByHutId.set(hutId, rowsForHut);
+}
+
+for (const hutRow of hutsRowsExtended) {
+  Object.assign(hutRow, buildSeasonFields(seasonFieldsByHutId.get(hutRow.id) ?? []));
+}
 
 let scrapeSummary = null;
 if (fs.existsSync(SCRAPE_SUMMARY_FILE)) {
