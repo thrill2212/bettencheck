@@ -24,16 +24,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build hut list (all huts MINUS tour-linked, season-filtered)
+      - name: Build hut list (all huts MINUS tour-linked)
         run: |
           set -euo pipefail
           node scripts/build-live-target-lists.mjs \
             --all-huts \
             --exclude-tour-huts \
-            --season-filter \
             --hut-output scrapers/hut-reservation/huts.all.json \
             --huettenholiday-output scrapers/huettenholiday/cabins.all.json
-          echo "Generated hut lists (non-tour, in-season only):"
+          echo "Generated hut lists (non-tour huts across the full booking year):"
           echo "  hut-reservation: $(jq 'length' scrapers/hut-reservation/huts.all.json) huts"
           echo "  huettenholiday:  $(jq 'length' scrapers/huettenholiday/cabins.all.json) cabins"
         env:
