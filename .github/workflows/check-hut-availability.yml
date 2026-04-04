@@ -110,6 +110,9 @@ jobs:
           fi
           echo "Selected huts:"
           jq 'length' scrapers/hut-reservation/huts.selected.json
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Check hut availability (first pass)
         id: scrape_hut_reservation_first
