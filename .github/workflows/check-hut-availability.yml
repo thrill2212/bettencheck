@@ -51,11 +51,37 @@ jobs:
         id: select_profile
         run: |
           set -euo pipefail
-          mode="${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'rotating' }}"
+          requested_mode="${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'rotating' }}"
+          mode="$requested_mode"
+          shard_reason=""
+
+          # Self-heal after upstream incidents: if route-scoped data is stale or incomplete,
+          # promote the next rotating run to a full route refresh.
+          if [ "$requested_mode" = "rotating" ]; then
+            readiness_json="$(mktemp)"
+            readiness_stderr="$(mktemp)"
+            if node scripts/check-live-readiness-gate.mjs >"$readiness_json" 2>"$readiness_stderr"; then
+              :
+            elif jq -e '(.notCoverageReadyRoutes | length > 0) or (.notFreshRoutes | length > 0)' "$readiness_json" >/dev/null 2>&1; then
+              mode="full"
+              shard_reason="recovery-full"
+              echo "Preflight readiness is stale/incomplete. Promoting rotating run to full refresh."
+              jq '{notCoverageReadyRoutes, notFreshRoutes}' "$readiness_json"
+            else
+              echo "Readiness preflight failed unexpectedly." >&2
+              cat "$readiness_stderr" >&2
+              exit 1
+            fi
+          fi
+
           if [ "$mode" = "full" ]; then
             cp scrapers/hut-reservation/huts.from-coverage.json scrapers/hut-reservation/huts.selected.json
             echo "mode=full" >> "$GITHUB_OUTPUT"
-            echo "shard=all" >> "$GITHUB_OUTPUT"
+            if [ -n "$shard_reason" ]; then
+              echo "shard=$shard_reason" >> "$GITHUB_OUTPUT"
+            else
+              echo "shard=all" >> "$GITHUB_OUTPUT"
+            fi
             echo "fetch_hut_info=true" >> "$GITHUB_OUTPUT"
             echo "fetch_hut_info_mode=always" >> "$GITHUB_OUTPUT"
             echo "request_delay=0.20" >> "$GITHUB_OUTPUT"
