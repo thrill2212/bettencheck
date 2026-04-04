@@ -78,6 +78,29 @@ test("normalizeHutReservationPayload sums freeBedsPerCategory when freeBeds is m
   assert.equal(rows[0].confidence, "exact");
 });
 
+test("normalizeHutReservationPayload sums object-shaped freeBedsPerCategory", () => {
+  const payload = {
+    hutId: 366,
+    checkedAt: "2026-02-09T20:00:00Z",
+    allDays: [
+      {
+        date: "2026-06-14T00:00:00.000Z",
+        hutStatus: "SERVICED",
+        freeBedsPerCategory: {
+          "348": 2,
+          "529": 3,
+        },
+      },
+    ],
+  };
+
+  const rows = normalizeHutReservationPayload(payload, { "366": "braunschweiger-huette" });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].available_beds, 5);
+  assert.equal(rows[0].status, "available");
+  assert.equal(rows[0].confidence, "exact");
+});
+
 test("normalizeHutReservationPayload treats FULL percentage as unavailable", () => {
   const payload = {
     hutId: 366,

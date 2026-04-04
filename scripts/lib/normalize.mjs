@@ -19,6 +19,17 @@ function normalizeCheckedAt(value) {
   return parsed.toISOString();
 }
 
+function categoryItems(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") {
+    return Object.entries(value).map(([categoryId, count]) => ({
+      categoryId,
+      totalFreePlaces: count,
+    }));
+  }
+  return [];
+}
+
 export function loadProviderMapping(mappingPath) {
   const raw = fs.readFileSync(mappingPath, "utf8");
   return JSON.parse(raw);
@@ -48,7 +59,7 @@ export function normalizeHutReservationPayload(payload, mapping) {
       const closed = day.hutStatus === "CLOSED";
       const directFreeBeds = Number(day.freeBeds);
       const hasDirectFreeBeds = Number.isFinite(directFreeBeds);
-      const categoryList = Array.isArray(day.freeBedsPerCategory) ? day.freeBedsPerCategory : [];
+      const categoryList = categoryItems(day.freeBedsPerCategory);
       const freeBedsFromCategories = categoryList.reduce((sum, category) => {
         const n = Number(category?.totalFreePlaces ?? category?.freeBeds ?? category?.freePlaces);
         return Number.isFinite(n) ? sum + n : sum;

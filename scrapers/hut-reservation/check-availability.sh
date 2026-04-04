@@ -321,6 +321,7 @@ for row in "${HUT_ROWS[@]}"; do
           phone: ($hutinfo.phone // null),
           providerName: ($hutinfo.providerName // null)
         },
+        hutBedCategories: ($hutinfo.hutBedCategories // []),
         location: $location,
         allDays: [.[] | select(.date[0:10] >= $start and .date[0:10] < $end)],
         availableDays: [.[] | select(.date[0:10] >= $start and .date[0:10] < $end and .hutStatus != "CLOSED")],

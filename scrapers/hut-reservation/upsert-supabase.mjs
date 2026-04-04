@@ -7,6 +7,9 @@ const scriptDir = path.dirname(new URL(import.meta.url).pathname);
 const outputDir = process.env.OUTPUT_DIR
   ? path.resolve(process.cwd(), process.env.OUTPUT_DIR)
   : path.join(scriptDir, "availability-results");
+const hutInfoCacheDir = process.env.HUT_INFO_CACHE_DIR
+  ? path.resolve(process.cwd(), process.env.HUT_INFO_CACHE_DIR)
+  : path.join(scriptDir, ".cache", "hut-info");
 const coverageFile = process.env.TOUR_COVERAGE_FILE
   ? path.resolve(process.cwd(), process.env.TOUR_COVERAGE_FILE)
   : path.join(scriptDir, "tour-id-coverage.json");
@@ -63,6 +66,17 @@ function parseElevation(raw) {
   return Math.max(1, Math.round(n));
 }
 
+function toCategoryEntries(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") {
+    return Object.entries(value).map(([providerCategoryId, count]) => ({
+      providerCategoryId,
+      totalFreePlaces: count,
+    }));
+  }
+  return [];
+}
+
 function parseBeds(day) {
   const directCandidates = [day?.availableBeds, day?.freeBeds];
   for (const candidate of directCandidates) {
@@ -74,7 +88,7 @@ function parseBeds(day) {
 
   const categoryCollections = [
     Array.isArray(day?.bedCategoriesData) ? day.bedCategoriesData : [],
-    Array.isArray(day?.freeBedsPerCategory) ? day.freeBedsPerCategory : [],
+    toCategoryEntries(day?.freeBedsPerCategory),
   ];
 
   for (const categories of categoryCollections) {
@@ -98,6 +112,94 @@ function parseBeds(day) {
   }
 
   return null;
+}
+
+function getPreferredCategoryLabel(category) {
+  const languageData = Array.isArray(category?.hutBedCategoryLanguageData)
+    ? category.hutBedCategoryLanguageData
+    : [];
+  const preferred = languageData.find((entry) => entry?.language === "DE_DE" || entry?.language === "DE_CH");
+  if (preferred?.label) return String(preferred.label).trim();
+  const fallback = languageData.find((entry) => typeof entry?.label === "string" && entry.label.trim() !== "");
+  return fallback?.label ? String(fallback.label).trim() : null;
+}
+
+function readCachedHutInfo(ref) {
+  const normalizedRef = String(ref ?? "").trim();
+  if (!normalizedRef) return null;
+  const cacheFile = path.join(hutInfoCacheDir, `hut-${normalizedRef}.json`);
+  if (!fs.existsSync(cacheFile)) return null;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeRoomCategoryLabel(label) {
+  const raw = String(label ?? "").trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === "matratzenlager" || raw === "massenlager") return "matratzenlager";
+  if (
+    raw === "mehrbettzimmer" ||
+    raw === "zimmerlager" ||
+    raw === "schlaflager" ||
+    raw === "zimmer" ||
+    raw === "bettenlager" ||
+    raw === "4-er zimmer"
+  ) {
+    return "mehrbettzimmer";
+  }
+  if (raw === "dortoir" || raw === "zimmern") return "matratzenlager";
+  if (
+    raw === "zweierzimmer" ||
+    raw === "2-er zimmer" ||
+    raw === "2er zimmer" ||
+    raw === "doppelzimmer" ||
+    raw === "privatzimmer"
+  ) {
+    return "privatzimmer";
+  }
+  return null;
+}
+
+function deriveDisplayStrategy({ normalizedCategory, rawLabel, reservationMode }) {
+  if (normalizedCategory) return "map_to_normalized";
+  const raw = String(rawLabel ?? "").trim().toLowerCase();
+  const mode = String(reservationMode ?? "").trim().toUpperCase();
+  if (
+    mode === "UNSERVICED" ||
+    raw.includes("unbewirtschaft") ||
+    raw.includes("winterraum") ||
+    raw.includes("schutzraum") ||
+    raw.includes("sonderkategorie")
+  ) {
+    return "fallback_to_total";
+  }
+  return "ignore";
+}
+
+function buildRoomCategoryRows(day) {
+  return toCategoryEntries(day?.freeBedsPerCategory)
+    .map((category) => {
+      const providerCategoryId = String(
+        category?.providerCategoryId ??
+          category?.categoryId ??
+          category?.bedCategoryId ??
+          category?.id ??
+          ""
+      ).trim();
+      if (!providerCategoryId) return null;
+      const availableBedsRaw = category?.totalFreePlaces ?? category?.freeBeds ?? category?.freePlaces;
+      const availableBeds = Number(availableBedsRaw);
+      return {
+        provider_category_id: providerCategoryId,
+        available_beds: Number.isFinite(availableBeds) ? Math.max(0, Math.round(availableBeds)) : null,
+      };
+    })
+    .filter(Boolean);
 }
 
 function parseBedsTotal(raw) {
@@ -222,6 +324,21 @@ async function upsertBatched(table, rows, onConflict, batchSize = 500) {
   }
 }
 
+async function upsertOptionalTable(table, rows, onConflict, batchSize = 500) {
+  if (!rows.length) {
+    return { skipped: false, usedFallback: false, count: 0 };
+  }
+
+  try {
+    await upsertBatched(table, rows, onConflict, batchSize);
+    return { skipped: false, usedFallback: false, count: rows.length };
+  } catch (error) {
+    const msg = String(error?.message ?? error);
+    if (!msg.includes("PGRST204")) throw error;
+    return { skipped: true, usedFallback: true, reason: msg, count: 0 };
+  }
+}
+
 async function upsertWithSchemaFallback({
   table,
   preferredRows,
@@ -295,6 +412,16 @@ for (const file of availabilityFiles) {
   const doc = JSON.parse(fs.readFileSync(file, "utf8"));
   const hutRef = String(doc?.sourceHutRef ?? doc?.hutId ?? "").trim();
   if (!hutRef || seenHutRefs.has(hutRef)) continue;
+  const cachedHutInfo = readCachedHutInfo(hutRef);
+  if (
+    cachedHutInfo &&
+    (!doc?.hutInfo || typeof doc.hutInfo !== "object" || Array.isArray(doc.hutInfo) || !Array.isArray(doc.hutInfo.hutBedCategories))
+  ) {
+    doc.hutInfo = {
+      ...(doc?.hutInfo && typeof doc.hutInfo === "object" && !Array.isArray(doc.hutInfo) ? doc.hutInfo : {}),
+      ...cachedHutInfo,
+    };
+  }
   seenHutRefs.add(hutRef);
   availabilityDocs.push(doc);
 }
@@ -464,6 +591,59 @@ const stageRowsBase = stageRowsExtended.map((s) => ({
   overnight_hut_id: s.overnight_hut_id,
 }));
 
+const roomCategoryMappingRows = [];
+for (const doc of availabilityDocs) {
+  const ref = String(doc?.sourceHutRef ?? doc?.hutId ?? "").trim();
+  if (!ref) continue;
+  const hutId = hutIdForRef(ref);
+  const checkedAt = doc?.checkedAt ?? new Date().toISOString();
+  const categories = Array.isArray(doc?.hutBedCategories)
+    ? doc.hutBedCategories
+    : Array.isArray(doc?.hutInfo?.hutBedCategories)
+      ? doc.hutInfo.hutBedCategories
+      : [];
+  for (const category of categories) {
+    const providerCategoryId = String(category?.categoryID ?? category?.categoryId ?? "").trim();
+    if (!providerCategoryId) continue;
+    const rawLabel = getPreferredCategoryLabel(category);
+    const normalizedCategory = normalizeRoomCategoryLabel(rawLabel);
+    const displayStrategy = deriveDisplayStrategy({
+      normalizedCategory,
+      rawLabel,
+      reservationMode: category?.reservationMode,
+    });
+    roomCategoryMappingRows.push({
+      hut_id: hutId,
+      provider: "hut-reservation",
+      provider_ref: ref,
+      provider_category_id: providerCategoryId,
+      raw_category_label: rawLabel,
+      normalized_category: normalizedCategory,
+      display_strategy: displayStrategy,
+      reservation_mode: category?.reservationMode ?? null,
+      is_visible: category?.isVisible ?? true,
+      total_sleeping_places: parseBedsTotal(category?.totalSleepingPlaces),
+      checked_at: checkedAt,
+      source: "hut-reservation.hutInfo",
+      metadata: {
+        tenant_bed_category_id: category?.tenantBedCategoryId ?? null,
+        category_index: category?.index ?? null,
+        is_linked_to_reservation: category?.isLinkedToReservation ?? null,
+      },
+    });
+  }
+}
+const roomCategoryMappingByKey = new Map();
+for (const row of roomCategoryMappingRows) {
+  const key = `${row.hut_id}|${row.provider_category_id}`;
+  const prev = roomCategoryMappingByKey.get(key);
+  if (!prev || String(row.checked_at) >= String(prev.checked_at)) {
+    roomCategoryMappingByKey.set(key, row);
+  }
+}
+const dedupedRoomCategoryMappingRows = [...roomCategoryMappingByKey.values()];
+
+const roomCategoryAvailabilityRowsRaw = [];
 const availabilityRowsRaw = [];
 for (const doc of availabilityDocs) {
   const ref = String(doc?.sourceHutRef ?? doc?.hutId ?? "").trim();
@@ -483,6 +663,24 @@ for (const doc of availabilityDocs) {
       source: "hut-reservation",
       checked_at: checkedAt,
     });
+
+    for (const categoryRow of buildRoomCategoryRows(day)) {
+      roomCategoryAvailabilityRowsRaw.push({
+        hut_id: hutId,
+        date,
+        provider_category_id: categoryRow.provider_category_id,
+        available_beds: categoryRow.available_beds,
+        status:
+          mapStatus(day) === "closed"
+            ? "closed"
+            : (categoryRow.available_beds ?? 0) > 0
+              ? "available"
+              : "unavailable",
+        confidence: categoryRow.available_beds !== null ? "exact" : "inferred",
+        source: "hut-reservation",
+        checked_at: checkedAt,
+      });
+    }
   }
 }
 const availabilityByKey = new Map();
@@ -500,6 +698,21 @@ for (const row of availabilityRowsRaw) {
   }
 }
 const availabilityRows = [...availabilityByKey.values()];
+const roomCategoryAvailabilityByKey = new Map();
+for (const row of roomCategoryAvailabilityRowsRaw) {
+  const key = `${row.hut_id}|${row.date}|${row.provider_category_id}`;
+  const prev = roomCategoryAvailabilityByKey.get(key);
+  if (!prev) {
+    roomCategoryAvailabilityByKey.set(key, row);
+    continue;
+  }
+  const prevTs = Date.parse(prev.checked_at ?? "");
+  const nextTs = Date.parse(row.checked_at ?? "");
+  if (!Number.isFinite(prevTs) || (Number.isFinite(nextTs) && nextTs >= prevTs)) {
+    roomCategoryAvailabilityByKey.set(key, row);
+  }
+}
+const roomCategoryAvailabilityRows = [...roomCategoryAvailabilityByKey.values()];
 const seasonFieldsByHutId = new Map();
 for (const row of availabilityRows) {
   const hutId = String(row?.hut_id ?? "").trim();
@@ -551,6 +764,19 @@ const stagesSync = await upsertWithSchemaFallback({
   onConflict: "route_id,day_index",
 });
 
+const roomCategoryMappingsSync = await upsertOptionalTable(
+  "hut_room_category_mappings",
+  dedupedRoomCategoryMappingRows,
+  "hut_id,provider_category_id",
+  1000
+);
+const roomCategoryAvailabilitySync = await upsertOptionalTable(
+  "availability_daily_room_categories",
+  roomCategoryAvailabilityRows,
+  "hut_id,date,provider_category_id",
+  1000
+);
+
 await upsertBatched("availability_daily", availabilityRows, "hut_id,date", 1000);
 
 await upsertBatched("scrape_runs", [
@@ -580,10 +806,14 @@ await upsertBatched("scrape_runs", [
       hutCount: hutsRowsExtended.length,
       stageCount: stageRowsExtended.length,
       availabilityRows: availabilityRows.length,
+      roomCategoryMappingRows: dedupedRoomCategoryMappingRows.length,
+      roomCategoryAvailabilityRows: roomCategoryAvailabilityRows.length,
       coverageFile,
       routesSchemaFallback: routesSync.usedFallback,
       hutsSchemaFallback: hutsSync.usedFallback,
       stagesSchemaFallback: stagesSync.usedFallback,
+      roomCategoryMappingsSkipped: roomCategoryMappingsSync.skipped,
+      roomCategoryAvailabilitySkipped: roomCategoryAvailabilitySync.skipped,
     },
   },
 ], "source,run_id");
@@ -597,12 +827,16 @@ console.log(
       huts: hutsRowsExtended.length,
       route_stages: stageRowsExtended.length,
       availability_daily: availabilityRows.length,
+      hut_room_category_mappings: roomCategoryMappingsSync.count,
+      availability_daily_room_categories: roomCategoryAvailabilitySync.count,
       coverageFile,
       outputDir,
       schemaFallback: {
         routes: routesSync.usedFallback,
         huts: hutsSync.usedFallback,
         route_stages: stagesSync.usedFallback,
+        hut_room_category_mappings: roomCategoryMappingsSync.usedFallback,
+        availability_daily_room_categories: roomCategoryAvailabilitySync.usedFallback,
       },
     },
     null,
